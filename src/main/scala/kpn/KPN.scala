@@ -133,4 +133,6 @@ object Main extends App {
   println(ExampleProg1.procA)
   println(ExampleProg1.procB)
 
+  new Encoder(ExampleProg1.network)
+
 }
