@@ -7,6 +7,8 @@ import ap.parser._
 import IExpression.{ConstantTerm, Sort}
 import ap.util.Seqs
 
+import lazabs.horn.bottomup.SimpleWrapper
+
 /**
  * Syntax for KPNs
  */
@@ -128,11 +130,24 @@ object KPN {
 
 object Main extends App {
 
-  println("hello")
+  ap.util.Debug.enableAllAssertions(true)
 
+  println("Analysing KPN ...")
+
+  println
   println(ExampleProg1.procA)
   println(ExampleProg1.procB)
 
-  new Encoder(ExampleProg1.network)
+  println
+
+  val encoder = new Encoder(ExampleProg1.network)
+
+  for (c <- encoder.allClauses)
+    println(c.toPrologString)
+
+  println
+  println("Solving ...")
+
+  println(SimpleWrapper.solve(encoder.allClauses))
 
 }
