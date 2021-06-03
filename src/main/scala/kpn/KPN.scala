@@ -91,9 +91,9 @@ object KPN {
   }
 
   def outChannels(p : Prog) : Set[Channel] = p match {
-    case Sequence(p1, p2)         => inChannels(p1) ++ inChannels(p2)
-    case IfThenElse(cond, p1, p2) => inChannels(p1) ++ inChannels(p2)
-    case While(cond, p)           => inChannels(p)
+    case Sequence(p1, p2)         => outChannels(p1) ++ outChannels(p2)
+    case IfThenElse(cond, p1, p2) => outChannels(p1) ++ outChannels(p2)
+    case While(cond, p)           => outChannels(p)
     case Send(chan, _)            => Set(chan)
     case _                        => Set()
   }
@@ -115,7 +115,8 @@ object KPN {
              ((i+1) until processes.size) forall { j =>
                Seqs.disjointSeq(processInChans(i).toSet, processInChans(j)) &&
                Seqs.disjointSeq(processOutChans(i).toSet, processOutChans(j))
-             }})
+             }},
+           "Channel with multiple readers or multiple writers")
 
     val allConsts : Seq[ConstantTerm] =
       (for (cs <- processConsts; c <- cs) yield c).distinct
@@ -130,17 +131,17 @@ object KPN {
 
 object Main extends App {
 
-  ap.util.Debug.enableAllAssertions(true)
+  ap.util.Debug.enableAllAssertions(false)
 
   println("Analysing KPN ...")
 
   println
-  println(ExampleProg1.procA)
-  println(ExampleProg1.procB)
+  println(ExampleProg2.procA)
+  println(ExampleProg2.procB)
 
   println
 
-  val encoder = new Encoder(ExampleProg1.network)
+  val encoder = new Encoder(ExampleProg2.network)
 
   for (c <- encoder.allClauses)
     println(c.toPrologString)
@@ -148,6 +149,11 @@ object Main extends App {
   println
   println("Solving ...")
 
-//  println(SimpleWrapper.solve(encoder.allClauses))
+  SimpleWrapper.solve(encoder.allClauses, debuggingOutput = true) match {
+    case Left(sol) =>
+      for ((p, f) <- sol.toSeq.sortBy(_._1.name)) {
+        println(p.name + ":\t" + f)
+      }
+  }
 
 }

@@ -270,7 +270,9 @@ class Encoder(network             : KPN.Network,
           processConsts(pn)
 
         val argSorts =
-          (chanHists map (_.sort)) ++ List(eventHist.sort) ++ (consts map (Sort sortOf _))
+          (chanHists map (_.sort)) ++
+            List(eventHist.sort) ++
+            (consts map (Sort sortOf _))
 
         var cnt = 0
         def newPred = {
@@ -278,12 +280,15 @@ class Encoder(network             : KPN.Network,
           new MonoSortedPredicate("proc_" + pn + "_" + (cnt - 1), argSorts)
         }
 
-        // TODO: use the original constants, for better readibility?
-        val preAtom       = pred2Atom(newPred, "e")
-        val postAtom      = pred2Atom(newPred, "o")
-
         val eventOffset   = chanHists.size
         val constsOffset  = chanHists.size + 1
+
+        val preAtom       = {
+          val p = newPred
+          val a = pred2Atom(p, "e")
+          newPred((a.args take constsOffset) ++ (consts map i) : _*)
+        }
+        val postAtom      = pred2Atom(newPred, "o")
 
         val chanHistsPre  = preAtom.args take chanHists.size
         val eventHistPre  = preAtom.args(chanHists.size)
@@ -291,8 +296,6 @@ class Encoder(network             : KPN.Network,
         val chanHistsPost = postAtom.args take chanHists.size
         val eventHistPost = postAtom.args(chanHists.size)
         val constsPost    = postAtom.args drop constsOffset
-
-        val preSubst      = (consts zip constsPre).toMap
 
         val clauses       = new VectorBuilder[Clause]
 
@@ -308,40 +311,70 @@ class Encoder(network             : KPN.Network,
                       postPred : Predicate) : Unit = p match {
           case Skip =>
             clauses += (toPre(postPred) :- toPre(prePred))
+
           case Sequence(left, right) => {
             val intPred = newPred
             translate(left, prePred, intPred)
             translate(right, intPred, postPred)
           }
+
           case While(cond, body) => {
-            val startPred = newPred
-            val guard = ConstantSubstVisitor(cond, preSubst)
-            clauses += (toPre(startPred) :- (toPre(prePred), guard))
-            clauses += (toPre(postPred) :- (toPre(prePred), ~guard))
-            translate(body, startPred, prePred)
+            val headPred, startPred = newPred
+            clauses += (toPre(headPred)  :- toPre(prePred))
+            clauses += (toPre(startPred) :- (toPre(headPred), cond))
+            clauses += (toPre(postPred)  :- (toPre(headPred), ~cond))
+            translate(body, startPred, headPred)
           }
+
+          case IfThenElse(cond, body1, body2) => {
+            val thenPred, elsePred = newPred
+            clauses += (toPre(thenPred) :- (toPre(prePred), cond))
+            clauses += (toPre(elsePred) :- (toPre(prePred), ~cond))
+            translate(body1, thenPred, postPred)
+            translate(body2, elsePred, postPred)
+          }
+
           case Assign(v, rhs) => {
-            val t        = ConstantSubstVisitor(rhs, preSubst)
             val ind      = consts indexOf v
-            val postArgs = preAtom.args.updated(constsOffset + ind, t)
+            val postArgs = preAtom.args.updated(constsOffset + ind, rhs)
             clauses      += (postPred(postArgs : _*) :- toPre(prePred))
           }
-          case Send(c, t) => {
+
+          case Assert(cond) => {
+            val event       = errorEvent()
+            val summaryArgs = chanHistsPre ++ List(eventHistPre, event)
+            clauses += (summary(summaryArgs : _*) :- (toPre(prePred), ~cond))
+            clauses += (toPre(postPred) :-(toPre(prePred), cond))
           }
+
+          case Send(c, t) => {
+            val cn          = allChans indexOf c
+            val event       = sendEvent(cn)(t)
+            val summaryArgs = chanHistsPre ++ List(eventHistPre, event)
+            clauses += (summary(summaryArgs : _*) :- toPre(prePred))
+
+            val eventConstr = eventHist.add(eventHistPre, event, eventHistPost)
+            val postArgs    = preAtom.args.updated(eventOffset, eventHistPost)
+            clauses += (postPred(postArgs : _*) :-(toPre(prePred), eventConstr))
+          }
+
           case Receive(c, v) => {
-            val cn          = processInChans(pn) indexOf c
+            val cn          = allChans indexOf c
+            val pcn         = processInChans(pn) indexOf c
             val event       = recvEvent(cn)()
             val summaryArgs = chanHistsPre ++ List(eventHistPre, event)
             clauses += (summary(summaryArgs : _*) :- toPre(prePred))
 
             val ind         = consts indexOf v
             val value       = c.sort newConstant "value"
-            val chanConstr  = chanHists(cn).add(chanHistsPre(cn), value, chanHistsPost(cn))
+            val chanConstr  = chanHists(pcn).add(chanHistsPre(pcn), value,
+                                                 chanHistsPost(pcn))
             val eventConstr = eventHist.add(eventHistPre, event, eventHistPost)
-            val postArgs    = preAtom.args.updated(cn, chanHistsPost(cn))
+            val postArgs    = preAtom.args.updated(pcn, chanHistsPost(pcn))
                                           .updated(eventOffset, eventHistPost)
                                           .updated(constsOffset + ind, i(value))
-            clauses += (postPred(postArgs : _*) :- (toPre(prePred), chanConstr, eventConstr))
+            clauses += (postPred(postArgs : _*) :-
+                          (toPre(prePred), chanConstr, eventConstr))
           }
         }
 
