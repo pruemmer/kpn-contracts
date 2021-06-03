@@ -8,6 +8,7 @@ import IExpression.{ConstantTerm, Sort}
 import ap.util.Seqs
 
 import lazabs.horn.bottomup.SimpleWrapper
+import lazabs.horn.bottomup.HornPredAbs.predArgumentSorts
 
 /**
  * Syntax for KPNs
@@ -136,12 +137,11 @@ object Main extends App {
   println("Analysing KPN ...")
 
   println
-  println(ExampleProg2.procA)
-  println(ExampleProg2.procB)
 
-  println
-
-  val encoder = new Encoder(ExampleProg2.network)
+  val encoder =
+    new Encoder(ExampleProg1.network,
+                defaultQueueEncoder = Encoder.Capacity1QueueEncoder,
+                defaultHistoryEncoder = Encoder.Capacity1HistoryEncoder)
 
   for (c <- encoder.allClauses)
     println(c.toPrologString)
@@ -152,8 +152,14 @@ object Main extends App {
   SimpleWrapper.solve(encoder.allClauses, debuggingOutput = true) match {
     case Left(sol) =>
       for ((p, f) <- sol.toSeq.sortBy(_._1.name)) {
-        println(p.name + ":\t" + f)
+        val sorts  = predArgumentSorts(p)
+        val consts = (for ((s, n) <- sorts.zipWithIndex)
+                      yield IExpression.i(s newConstant ("x" + n))).toList
+        val solWithConsts = VariableSubstVisitor(f, (consts, 0))
+        println(p.name + ":\t" + PrincessLineariser.asString(solWithConsts))
       }
+    case Right(cex) =>
+      cex.prettyPrint
   }
 
 }

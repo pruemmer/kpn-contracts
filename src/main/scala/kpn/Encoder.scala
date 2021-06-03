@@ -58,6 +58,31 @@ object Encoder {
     }
   }
 
+  object Capacity1QueueEncoder extends QueueEncoder {
+    def apply(elementSort : Sort) = new QueueEncoderInstance {
+      val name = elementSort.name + "_queue1"
+      val (sort, record, Seq(queue_size, queue_value)) =
+        ADT.createRecordType(name,
+                             List((name + "_size", Sort.Integer),
+                                  (name + "_value", elementSort)))
+
+      def isEmpty(t : ITerm) : IFormula = queue_size(t) === 0
+
+      def enqueue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
+        (queue_size(post) === queue_size(pre) + 1) &
+        ite(queue_size(pre) === 0,
+            queue_value(post) === el,
+            queue_value(post) === queue_value(pre))
+
+      def dequeue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
+        (queue_size(pre) > 0) &
+        (queue_size(post) === queue_size(pre) - 1) &
+        ((queue_size(pre) === 1) ==> (el === queue_value(pre)))
+
+      val axioms = List()
+    }
+  }
+
   abstract class HistoryEncoder {
     def apply(s : Sort) : HistoryEncoderInstance
   }
@@ -77,13 +102,34 @@ object Encoder {
         post === cons(el, pre)
     }
   }
+
+  object Capacity1HistoryEncoder extends HistoryEncoder {
+    def apply(elementSort : Sort) = new HistoryEncoderInstance {
+      val name = elementSort.name + "_hist1"
+      val (sort, record, Seq(hist_size, hist_value)) =
+        ADT.createRecordType(name,
+                             List((name + "_size", Sort.Integer),
+                                  (name + "_value", elementSort)))
+      def isEmpty(t : ITerm) : IFormula = t === record(0, 0)
+      def add(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
+        post === record(1, el)
+    }
+  }
 }
 
+////////////////////////////////////////////////////////////////////////////////
 
 class Encoder(network             : KPN.Network,
-              queueEncoders       : Map[KPN.Channel, Encoder.QueueEncoder] = Map(),
-              chanHistoryEncoders : Map[KPN.Channel, Encoder.HistoryEncoder] = Map(),
-              eventEncoders       : Map[Int, Encoder.HistoryEncoder] = Map()) {
+              queueEncoders       : Map[KPN.Channel, Encoder.QueueEncoder] =
+                Map(),
+              chanHistoryEncoders : Map[KPN.Channel, Encoder.HistoryEncoder] =
+                Map(),
+              eventEncoders       : Map[Int, Encoder.HistoryEncoder] =
+                Map(),
+              defaultQueueEncoder : Encoder.QueueEncoder =
+                Encoder.ListQueueEncoder,
+              defaultHistoryEncoder : Encoder.HistoryEncoder =
+                Encoder.ListHistoryEncoder) {
 
   import KPN._
   import Encoder._
@@ -122,14 +168,14 @@ class Encoder(network             : KPN.Network,
 
   val channelQueues =
     for (chan <- allChans)
-    yield queueEncoders.getOrElse(chan, ListQueueEncoder)(chan.sort)
+    yield queueEncoders.getOrElse(chan, defaultQueueEncoder)(chan.sort)
   val channelHistories =
     for (chan <- allChans)
-    yield chanHistoryEncoders.getOrElse(chan, ListHistoryEncoder)(chan.sort)
+    yield chanHistoryEncoders.getOrElse(chan, defaultHistoryEncoder)(chan.sort)
 
   val processEventHistories =
     for (n <- 0 until PN)
-    yield eventEncoders.getOrElse(n, ListHistoryEncoder)(eventSort)
+    yield eventEncoders.getOrElse(n, defaultHistoryEncoder)(eventSort)
   val processChanHistories =
     for (n <- 0 until PN)
     yield (for ((c, h) <- allChans zip channelHistories;
