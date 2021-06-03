@@ -148,6 +148,6 @@ object Main extends App {
   println
   println("Solving ...")
 
-  println(SimpleWrapper.solve(encoder.allClauses))
+//  println(SimpleWrapper.solve(encoder.allClauses))
 
 }
