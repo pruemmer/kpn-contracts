@@ -7,7 +7,9 @@ import ap.parser._
 import IExpression.{ConstantTerm, Sort}
 import ap.util.Seqs
 
+import lazabs.GlobalParameters
 import lazabs.horn.bottomup.SimpleWrapper
+import lazabs.horn.bottomup.Util
 import lazabs.horn.bottomup.HornPredAbs.predArgumentSorts
 
 /**
@@ -133,13 +135,16 @@ object KPN {
 object Main extends App {
 
   ap.util.Debug.enableAllAssertions(false)
+  GlobalParameters.get.assertions = false
+
+  val network = ExampleProg2.network
 
   println("Analysing KPN ...")
 
   println
 
   val encoder =
-    new Encoder(ExampleProg1.network,
+    new Encoder(network,
                 defaultQueueEncoder = Encoder.Capacity1QueueEncoder,
                 defaultHistoryEncoder = Encoder.Capacity1HistoryEncoder)
 
@@ -149,6 +154,7 @@ object Main extends App {
   println
   println("Solving ...")
 
+//  GlobalParameters.get.log = true
   SimpleWrapper.solve(encoder.allClauses, debuggingOutput = true) match {
     case Left(sol) =>
       for ((p, f) <- sol.toSeq.sortBy(_._1.name)) {
@@ -158,8 +164,12 @@ object Main extends App {
         val solWithConsts = VariableSubstVisitor(f, (consts, 0))
         println(p.name + ":\t" + PrincessLineariser.asString(solWithConsts))
       }
-    case Right(cex) =>
+    case Right(cex) => {
       cex.prettyPrint
+      GlobalParameters.get.pngNo = false
+      GlobalParameters.get.eogCEX = true
+      Util.show(cex map (_._1), "kpn")
+    }
   }
 
 }

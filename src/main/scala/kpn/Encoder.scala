@@ -108,11 +108,12 @@ object Encoder {
       val name = elementSort.name + "_hist1"
       val (sort, record, Seq(hist_size, hist_value)) =
         ADT.createRecordType(name,
-                             List((name + "_size", Sort.Integer),
+                             List((name + "_empty", Sort.Bool),
                                   (name + "_value", elementSort)))
-      def isEmpty(t : ITerm) : IFormula = t === record(0, 0)
+      def isEmpty(t : ITerm) : IFormula =
+        t === record(ADT.BoolADT.True, elementSort.witness.get)
       def add(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        post === record(1, el)
+        post === record(ADT.BoolADT.False, el)
     }
   }
 }
@@ -348,7 +349,8 @@ class Encoder(network             : KPN.Network,
         clauses += (preAtom :- (and(for ((h, t) <- chanHists zip chanHistsPre)
                                     yield (h isEmpty t)),
                                 eventHist isEmpty eventHistPre,
-                                constsPre === 0))
+                                and(for (c <- constsPre)
+                                    yield (c === Sort.sortOf(c).witness.get))))
 
         def toPre(p : Predicate) = p(preAtom.args : _*)
 
