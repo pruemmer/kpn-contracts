@@ -285,15 +285,35 @@ object ExampleProgSum {
   val SumSummary : Encoder.Summary =
     (hist, eventHist, event, api) => {
       import api._
+
       ite(eventHist.isEmpty,
+
           event.isRecv(in1),
+
           (eventHist.last.isSend(out) & event.isRecv(in1)) |
           (eventHist.last.isRecv(in1) & event.isRecv(in2)) |
           (eventHist.last.isRecv(in2) & event.isSend(out) &
              event.sentValue(out) >= hist(in1).last + hist(in2).last))
     }
 
+  val IncSummary : Encoder.Summary =
+    (hist, eventHist, event, api) => {
+      import api._
+
+      ite(eventHist.isEmpty,
+
+          event.isSend(in1) & event.sentValue(in1) >= 0,
+
+          (eventHist.last.isSend(in1) & event.isSend(in2) &
+             event.sentValue(in2) === 1) |
+          (eventHist.last.isSend(in2) & event.isRecv(out)) |
+          (eventHist.last.isRecv(out) & hist(out).last < 0 &
+             event.isError) |
+          (eventHist.last.isRecv(out) & event.isSend(in1) &
+             event.sentValue(in1) >= 0))
+    }
+
   val summaries : Map[Int, Encoder.Summary] =
-    Map(0 -> SumSummary)
+    Map(0 -> SumSummary, 1 -> IncSummary)
 
 }

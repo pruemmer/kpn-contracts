@@ -154,14 +154,14 @@ object Main extends App {
                 defaultHistoryEncoder = Encoder.Capacity1HistoryEncoder,
                 summaries = contracts)
 
-  for (c <- encoder.allClauses)
-    println(c.toPrologString)
+//  for (c <- encoder.allClauses)
+//    println(c.toPrologString)
 
   println
   println("Solving ...")
 
 //  GlobalParameters.get.log = true
-  SimpleWrapper.solve(encoder.allClauses, debuggingOutput = true) match {
+  SimpleWrapper.solve(encoder.allClauses, debuggingOutput = false) match {
     case Left(sol) =>
       for ((p, f) <- sol.toSeq.sortBy(_._1.name)) {
         val sorts  = predArgumentSorts(p)
