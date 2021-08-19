@@ -63,6 +63,10 @@ object KPN {
     def -->(chan : Channel) = Send(chan, v)
   }
 
+  implicit def int2RichTerm(n : Int) = new AnyRef {
+    def -->(chan : Channel) = Send(chan, n)
+  }
+
   implicit def ite2RichIte(p : IfThenElse) = new AnyRef {
     def Else(branch : Prog*) =
       IfThenElse(p.cond, p.b1, Prog(branch : _*))
@@ -137,7 +141,8 @@ object Main extends App {
   ap.util.Debug.enableAllAssertions(false)
   GlobalParameters.get.assertions = false
 
-  val network = ExampleProg2.network
+  val network   = ExampleProgSum.network
+  val contracts = ExampleProgSum.summaries
 
   println("Analysing KPN ...")
 
@@ -146,7 +151,8 @@ object Main extends App {
   val encoder =
     new Encoder(network,
                 defaultQueueEncoder = Encoder.Capacity1QueueEncoder,
-                defaultHistoryEncoder = Encoder.Capacity1HistoryEncoder)
+                defaultHistoryEncoder = Encoder.Capacity1HistoryEncoder,
+                summaries = contracts)
 
   for (c <- encoder.allClauses)
     println(c.toPrologString)

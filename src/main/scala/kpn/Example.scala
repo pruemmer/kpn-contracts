@@ -240,3 +240,60 @@ object ExampleProg3Unsafe {
   val network = Network(List(procA, procB, procC))
 
 }
+
+object ExampleProgSum {
+
+  import KPN._
+  import IExpression._
+
+  val c = Sort.Integer newConstant "c"
+  val d = Sort.Integer newConstant "d"
+  val in1 = new Channel("in1", Sort.Integer)
+  val in2 = new Channel("in2", Sort.Integer)
+  val out = new Channel("out", Sort.Integer)
+
+  /**
+   * Sum process
+   */
+
+  val procSum = Prog(
+    While (true) (
+      c <-- in1,
+      d <-- in2,
+      (c + d) --> out
+    )
+  )
+
+  /**
+   * Incrementing process, using process Sum to increment the
+   * input from out by 1.
+   */
+
+  val procInc = Prog(
+    0 --> in1,
+    1 --> in2,
+    While (true) (
+      c <-- out,
+      Assert(c >= 0),
+      c --> in1,
+      1 --> in2
+    )
+  )
+
+  val network = Network(List(procSum, procInc))
+
+  val SumSummary : Encoder.Summary =
+    (hist, eventHist, event, api) => {
+      import api._
+      ite(eventHist.isEmpty,
+          event.isRecv(in1),
+          (eventHist.last.isSend(out) & event.isRecv(in1)) |
+          (eventHist.last.isRecv(in1) & event.isRecv(in2)) |
+          (eventHist.last.isRecv(in2) & event.isSend(out) &
+             event.sentValue(out) >= hist(in1).last + hist(in2).last))
+    }
+
+  val summaries : Map[Int, Encoder.Summary] =
+    Map(0 -> SumSummary)
+
+}
