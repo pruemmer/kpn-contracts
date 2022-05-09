@@ -77,7 +77,38 @@ object Encoder {
       def dequeue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
         (queue_size(pre) > 0) &
         (queue_size(post) === queue_size(pre) - 1) &
-        ((queue_size(pre) === 1) ==> (el === queue_value(pre)))
+        (el === queue_value(pre))
+
+      val axioms = List()
+    }
+  }
+
+  object Capacity2QueueEncoder extends QueueEncoder {
+    def apply(elementSort : Sort) = new QueueEncoderInstance {
+      val name = elementSort.name + "_queue2"
+      val (sort, record, Seq(queue_size, queue_value1, queue_value2)) =
+        ADT.createRecordType(name,
+                             List((name + "_size", Sort.Integer),
+                                  (name + "_value1", elementSort),
+                                  (name + "_value2", elementSort)))
+
+      def isEmpty(t : ITerm) : IFormula = queue_size(t) === 0
+
+      def enqueue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
+        (queue_size(post) === queue_size(pre) + 1) &
+        ((queue_size(pre) === 0 & queue_value1(post) === el) |
+           (queue_size(pre) === 1 &
+              queue_value1(post) === queue_value1(pre) &
+              queue_value2(post) === el) |
+           (queue_size(pre) >= 2 &
+              queue_value1(post) === queue_value1(pre) &
+              queue_value2(post) === queue_value2(pre)))
+
+      def dequeue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
+        (queue_size(pre) > 0) &
+        (queue_size(post) === queue_size(pre) - 1) &
+        (el === queue_value1(pre)) &
+        (queue_value1(post) === queue_value2(pre))
 
       val axioms = List()
     }

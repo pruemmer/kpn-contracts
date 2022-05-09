@@ -136,46 +136,52 @@ object KPN {
 }
 
 
-object Main extends App {
+object SolveUtil {
 
-  ap.util.Debug.enableAllAssertions(false)
-  GlobalParameters.get.assertions = false
+  def solve(name         : String,
+            network      : KPN.Network,
+            contracts    : Map[Int, Encoder.Summary] = Map(),
+            debug        : Boolean = false,
+            queueEncoder : Encoder.QueueEncoder =
+              Encoder.Capacity1QueueEncoder) : Unit = {
+    ap.util.Debug.enableAllAssertions(false)
+    GlobalParameters.get.assertions = false
 
-  val network   = ExampleProgSum.network
-  val contracts = ExampleProgSum.summaries
+    println("Analysing KPN " + name)
 
-  println("Analysing KPN ...")
+    println
 
-  println
-
-  val encoder =
-    new Encoder(network,
-                defaultQueueEncoder = Encoder.Capacity1QueueEncoder,
-                defaultHistoryEncoder = Encoder.Capacity1HistoryEncoder,
-                summaries = contracts)
+    val encoder =
+      new Encoder(network,
+                  defaultQueueEncoder = queueEncoder,
+                  defaultHistoryEncoder = Encoder.Capacity1HistoryEncoder,
+                  summaries = contracts)
 
 //  for (c <- encoder.allClauses)
 //    println(c.toPrologString)
 
-  println
-  println("Solving ...")
+    println
+    println("Solving ...")
 
-//  GlobalParameters.get.log = true
-  SimpleWrapper.solve(encoder.allClauses, debuggingOutput = false) match {
-    case Left(sol) =>
-      for ((p, f) <- sol.toSeq.sortBy(_._1.name)) {
-        val sorts  = predArgumentSorts(p)
-        val consts = (for ((s, n) <- sorts.zipWithIndex)
+    GlobalParameters.get.log = debug
+    SimpleWrapper.solve(encoder.allClauses, debuggingOutput = debug) match {
+      case Left(sol) =>
+        for ((p, f) <- sol.toSeq.sortBy(_._1.name)) {
+          val sorts  = predArgumentSorts(p)
+          val consts = (for ((s, n) <- sorts.zipWithIndex)
                       yield IExpression.i(s newConstant ("x" + n))).toList
-        val solWithConsts = VariableSubstVisitor(f, (consts, 0))
-        println(p.name + ":\t" + PrincessLineariser.asString(solWithConsts))
+          val solWithConsts = VariableSubstVisitor(f, (consts, 0))
+          println(p.name + ":\t" + PrincessLineariser.asString(solWithConsts))
+        }
+      case Right(cex) => {
+        cex.prettyPrint
+        GlobalParameters.get.pngNo = false
+        GlobalParameters.get.eogCEX = true
+        Util.show(cex map (_._1), "kpn")
       }
-    case Right(cex) => {
-      cex.prettyPrint
-      GlobalParameters.get.pngNo = false
-      GlobalParameters.get.eogCEX = true
-      Util.show(cex map (_._1), "kpn")
     }
   }
 
 }
+
+
