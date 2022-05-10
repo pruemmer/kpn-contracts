@@ -77,6 +77,21 @@ object Nodes {
     )
   }
 
+  def SplitContract(sort : Sort, in : Channel,
+                    outs : Channel*) : Encoder.Summary =
+    (hist, eventHist, event, api) => {
+      import api._
+
+      ite(eventHist.isEmpty,
+          event.isRecv(in),
+          (eventHist.last.isRecv(in) & event.isSend(outs.head) &
+             (event.sentValue(outs.head) === hist(in).last)) |
+          (eventHist.last.isSend(outs.last) & event.isRecv(in)) |
+            or(for (Seq(c, d) <- outs sliding 2)
+               yield (eventHist.last.isSend(c) & event.isSend(d) &
+                        (event.sentValue(d) === hist(in).last))))
+    }
+
   def AssertImpl(in : Channel, prop : ITerm => IFormula,
                  sort : Sort = Sort.Integer) = {
     val c = sort newConstant "c"
@@ -357,7 +372,7 @@ object AddIncInferSched extends App {
   SolveUtil.solve("IncAdd, inferring summaries, assuming system schedule",
                   ExampleProgSum.network,
                   schedule = Some(ExampleProgSum.schedule),
-                  debug = true)
+                  printSol = true)
 
 }
 
@@ -434,17 +449,20 @@ object ExampleProgSum {
 
 object FibonacciInfer extends App {
 
-  SolveUtil.solve("Fibonacci, inferring contracts",
-                  ExampleProgFib.network)
+  SolveUtil.solve("Fibonacci, inferring contracts, assuming system schedule",
+                  ExampleProgFib.network,
+                  schedule = Some(ExampleProgFib.schedule),
+                  printSol = true)
 
 }
 
 object FibonacciVerify extends App {
 
-  SolveUtil.solve("Fibonacci, verifying contracts",
+  SolveUtil.solve("Fibonacci, verifying contracts, assuming system schedule",
                   ExampleProgFib.network,
                   ExampleProgFib.summaries,
-                  debug = true)
+                  schedule = Some(ExampleProgFib.schedule),
+                  printSol = true)
 
 }
 
@@ -465,21 +483,27 @@ object ExampleProgFib {
                  Nodes.AddImpl   (ck, fk, ak),
                  Nodes.DelayImpl (1, ak, bk),
                  Nodes.SplitImpl (Sort.Integer, bk, ck, dk, ek),
-                 Nodes.AssertImpl(dk, x => x >= 0)))
+                 Nodes.AssertImpl(dk, _ >= 0)))
 
   val summaries : Map[Int, Encoder.Summary] =
     Map(0 -> Nodes.DelayContract(0, ek, fk),
         1 -> Nodes.AddContract(ck, fk, ak),
-        2 -> Nodes.DelayContract(1, ak, bk))
+        2 -> Nodes.DelayContract(1, ak, bk),
+        3 -> Nodes.SplitContract(Sort.Integer, bk, ck, dk, ek))
 
   val schedule : Encoder.Schedule =
     Encoder.Schedule(0, List((0, Encoder.SendEvent(bk), 1),
                              (1, Encoder.RecvEvent(bk), 2),
                              (2, Encoder.SendEvent(ck), 3),
                              (3, Encoder.RecvEvent(ck), 4),
-                             (2, Encoder.SendEvent(ck), 3),
-                             (3, Encoder.RecvEvent(ck), 4),
-                             (4, Encoder.SendEvent(out), 5),
-                             (5, Encoder.RecvEvent(out), 0)))
+                             (4, Encoder.SendEvent(dk), 5),
+                             (5, Encoder.RecvEvent(dk), 6),
+                             (6, Encoder.ErrorEvent, 6),
+                             (6, Encoder.SendEvent(fk), 7),
+                             (7, Encoder.RecvEvent(fk), 8),
+                             (8, Encoder.SendEvent(ek), 9),
+                             (9, Encoder.RecvEvent(ek), 10),
+                             (10, Encoder.SendEvent(ak), 11),
+                             (11, Encoder.RecvEvent(ak), 0)))
 
 }

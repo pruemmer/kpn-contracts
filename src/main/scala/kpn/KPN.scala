@@ -143,6 +143,7 @@ object SolveUtil {
             contracts    : Map[Int, Encoder.Summary] = Map(),
             schedule     : Option[Encoder.Schedule] = None,
             debug        : Boolean = false,
+            printSol     : Boolean = false,
             queueEncoder : Encoder.QueueEncoder =
               Encoder.Capacity1QueueEncoder) : Unit = {
     ap.util.Debug.enableAllAssertions(false)
@@ -166,22 +167,30 @@ object SolveUtil {
     println
     println("Solving ...")
 
-    GlobalParameters.get.log = debug
-    SimpleWrapper.solve(encoder.allClauses, debuggingOutput = debug) match {
-      case Left(sol) =>
-        for ((p, f) <- sol.toSeq.sortBy(_._1.name)) {
-          val sorts  = predArgumentSorts(p)
-          val consts = (for ((s, n) <- sorts.zipWithIndex)
-                      yield IExpression.i(s newConstant ("x" + n))).toList
-          val solWithConsts = VariableSubstVisitor(f, (consts, 0))
-          println(p.name + ":\t" + PrincessLineariser.asString(solWithConsts))
+    if (printSol || debug) {
+      GlobalParameters.get.log = debug
+      SimpleWrapper.solve(encoder.allClauses, debuggingOutput = debug) match {
+        case Left(sol) =>
+          for ((p, f) <- sol.toSeq.sortBy(_._1.name)) {
+            val sorts  = predArgumentSorts(p)
+            val consts = (for ((s, n) <- sorts.zipWithIndex)
+                          yield IExpression.i(s newConstant ("x" + n))).toList
+            val solWithConsts = VariableSubstVisitor(f, (consts, 0))
+            println(p.name + ":\t" + PrincessLineariser.asString(solWithConsts))
+          }
+        case Right(cex) => {
+          cex.prettyPrint
+          GlobalParameters.get.pngNo = false
+          GlobalParameters.get.eogCEX = true
+          Util.show(cex map (_._1), "kpn")
         }
-      case Right(cex) => {
-        cex.prettyPrint
-        GlobalParameters.get.pngNo = false
-        GlobalParameters.get.eogCEX = true
-        Util.show(cex map (_._1), "kpn")
       }
+    } else {
+      GlobalParameters.get.log = false
+      if (SimpleWrapper.isSat(encoder.allClauses))
+        println("SAFE")
+      else
+        println("UNSAFE")
     }
   }
 
