@@ -336,10 +336,28 @@ object AddIncVerify extends App {
 
 }
 
+object AddIncVerifySched extends App {
+
+  SolveUtil.solve("IncAdd, verifying summaries, assuming system schedule",
+                  ExampleProgSum.network,
+                  ExampleProgSum.summaries,
+                  Some(ExampleProgSum.schedule))
+
+}
+
 object AddIncInfer extends App {
 
   SolveUtil.solve("IncAdd, inferring summaries",
                   ExampleProgSum.network)
+
+}
+
+object AddIncInferSched extends App {
+
+  SolveUtil.solve("IncAdd, inferring summaries, assuming system schedule",
+                  ExampleProgSum.network,
+                  schedule = Some(ExampleProgSum.schedule),
+                  debug = true)
 
 }
 
@@ -402,6 +420,15 @@ object ExampleProgSum {
   val summaries : Map[Int, Encoder.Summary] =
     Map(0 -> SumSummary, 1 -> IncSummary)
 
+  val schedule : Encoder.Schedule =
+    Encoder.Schedule(0, List((0, Encoder.SendEvent(in1), 1),
+                             (1, Encoder.RecvEvent(in1), 2),
+                             (2, Encoder.SendEvent(in2), 3),
+                             (3, Encoder.RecvEvent(in2), 4),
+                             (4, Encoder.SendEvent(out), 5),
+                             (5, Encoder.RecvEvent(out), 0),
+                             (0, Encoder.ErrorEvent, 0)))
+
 }
 
 
@@ -417,8 +444,7 @@ object FibonacciVerify extends App {
   SolveUtil.solve("Fibonacci, verifying contracts",
                   ExampleProgFib.network,
                   ExampleProgFib.summaries,
-                  debug = true,
-                  queueEncoder = Encoder.Capacity2QueueEncoder)
+                  debug = true)
 
 }
 
@@ -445,5 +471,15 @@ object ExampleProgFib {
     Map(0 -> Nodes.DelayContract(0, ek, fk),
         1 -> Nodes.AddContract(ck, fk, ak),
         2 -> Nodes.DelayContract(1, ak, bk))
+
+  val schedule : Encoder.Schedule =
+    Encoder.Schedule(0, List((0, Encoder.SendEvent(bk), 1),
+                             (1, Encoder.RecvEvent(bk), 2),
+                             (2, Encoder.SendEvent(ck), 3),
+                             (3, Encoder.RecvEvent(ck), 4),
+                             (2, Encoder.SendEvent(ck), 3),
+                             (3, Encoder.RecvEvent(ck), 4),
+                             (4, Encoder.SendEvent(out), 5),
+                             (5, Encoder.RecvEvent(out), 0)))
 
 }

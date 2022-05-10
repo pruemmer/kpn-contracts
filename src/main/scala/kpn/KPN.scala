@@ -141,6 +141,7 @@ object SolveUtil {
   def solve(name         : String,
             network      : KPN.Network,
             contracts    : Map[Int, Encoder.Summary] = Map(),
+            schedule     : Option[Encoder.Schedule] = None,
             debug        : Boolean = false,
             queueEncoder : Encoder.QueueEncoder =
               Encoder.Capacity1QueueEncoder) : Unit = {
@@ -155,10 +156,12 @@ object SolveUtil {
       new Encoder(network,
                   defaultQueueEncoder = queueEncoder,
                   defaultHistoryEncoder = Encoder.Capacity1HistoryEncoder,
-                  summaries = contracts)
+                  summaries = contracts,
+                  systemSchedule = schedule)
 
-//  for (c <- encoder.allClauses)
-//    println(c.toPrologString)
+    if (debug)
+      for (c <- encoder.allClauses)
+        println(c.toPrologString)
 
     println
     println("Solving ...")

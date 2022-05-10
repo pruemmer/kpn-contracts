@@ -193,6 +193,23 @@ object Encoder {
    */
   type Summary = (Map[KPN.Channel, History], History,
                   ITerm, EventAPI) => IFormula
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  sealed abstract class Event
+  case object ErrorEvent                 extends Event
+
+  abstract class ChannelEvent(c : KPN.Channel) extends Event
+  case class     RecvEvent(_c : KPN.Channel) extends ChannelEvent(_c)
+  case class     SendEvent(_c : KPN.Channel) extends ChannelEvent(_c)
+
+  /**
+   * Class to represent schedules of the overall system, represented
+   * as an automaton over the events on the channels.
+   */
+  case class Schedule(initial : Int,
+                      transitions : Seq[(Int, Event, Int)])
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -209,7 +226,9 @@ class Encoder(network               : KPN.Network,
               defaultHistoryEncoder : Encoder.HistoryEncoder =
                 Encoder.ListHistoryEncoder,
               summaries             : Map[Int, Encoder.Summary] =
-                Map()) {
+                Map(),
+              systemSchedule        : Option[Encoder.Schedule] =
+                None) {
 
   import KPN._
   import Encoder._
@@ -285,11 +304,13 @@ class Encoder(network               : KPN.Network,
     new MonoSortedPredicate("state",
                             (channelQueues map (_.sort)) ++
                               (channelHistories map (_.sort)) ++
-                              (processEventHistories map (_.sort)))
+                              (processEventHistories map (_.sort)) ++
+                              List(Sort.Integer))
 
-  val stateChanQueueOffset = 0
-  val stateChanHistOffset  = CN
-  val stateEventHistOffset = 2*CN
+  val stateChanQueueOffset           = 0
+  val stateChanHistOffset            = CN
+  val stateEventHistOffset           = 2*CN
+  val stateSystemScheduleStateOffset = globalState.arity - 1
 
   def instantiateSummary(processId : Int,
                          chanHistories : Seq[ITerm], eventHistory : ITerm,
@@ -318,6 +339,16 @@ class Encoder(network               : KPN.Network,
   // Clauses about the global system execution; processes are
   // represented by their summaries
 
+  val finalSystemSchedule =
+    systemSchedule match {
+      case Some(s) => s
+      case None =>
+        Schedule(0,
+                 (for (c <- allChans;
+                       ev <- List(RecvEvent(c), SendEvent(c)))
+                  yield (0, ev, 0)) ++ List((0, ErrorEvent, 0)))
+    }
+
   def pred2Atom(p : MonoSortedPredicate, prefix : String) : IAtom = {
     val args =
       for ((s, n) <- p.argSorts.zipWithIndex) yield (s newConstant (prefix + n))
@@ -331,9 +362,11 @@ class Encoder(network               : KPN.Network,
     val chanQueuePre    = globalPreState.args drop stateChanQueueOffset take CN
     val chanHistPre     = globalPreState.args drop stateChanHistOffset take CN
     val eventHistPre    = globalPreState.args drop stateEventHistOffset take PN
+    val schedStatePre   = globalPreState.args(stateSystemScheduleStateOffset)
     val chanQueuePost   = globalPostState.args drop stateChanQueueOffset take CN
     val chanHistPost    = globalPostState.args drop stateChanHistOffset take CN
     val eventHistPost   = globalPostState.args drop stateEventHistOffset take PN
+    val schedStatePost  = globalPostState.args(stateSystemScheduleStateOffset)
 
     val procChanHist =
       for (pn <- 0 until PN)
@@ -350,17 +383,21 @@ class Encoder(network               : KPN.Network,
       val procHistInits =
         and(for ((t, p) <- eventHistPost zip processEventHistories)
             yield (p isEmpty t))
-      globalPostState :- (queueInits, chanHistInits, procHistInits)
+      val schedInit =
+        schedStatePost === finalSystemSchedule.initial
+      globalPostState :- (queueInits, chanHistInits, procHistInits, schedInit)
     }
 
     val recvClauses =
       for ((p, pn) <- processes.zipWithIndex;
            c <- processInChans(pn);
-           cn = allChans indexOf c) yield {
+           cn = allChans indexOf c;
+           (schedFrom, RecvEvent(`c`), schedTo) <- finalSystemSchedule.transitions) yield {
         val postArgs =
           globalPreState.args.updated(stateChanQueueOffset + cn, chanQueuePost(cn))
                              .updated(stateChanHistOffset + cn, chanHistPost(cn))
                              .updated(stateEventHistOffset + pn, eventHistPost(pn))
+                             .updated(stateSystemScheduleStateOffset, schedStatePost)
         val value =
           c.sort newConstant "value"
         val event =
@@ -372,21 +409,25 @@ class Encoder(network               : KPN.Network,
           channelHistories(cn).add(chanHistPre(cn), value, chanHistPost(cn))
         val eventhistadd =
           processEventHistories(pn).add(eventHistPre(pn), event, eventHistPost(pn))
+        val schedConstraints =
+          (schedStatePre === schedFrom) & (schedStatePost === schedTo)
 
         globalState(postArgs : _*) :- (globalPreState,
                                        summaryFor(pn,
                                                   procChanHist(pn) ++
                                                     List(eventHistPre(pn), event)),
-                                       deq, chanhistadd, eventhistadd)
+                                       deq, chanhistadd, eventhistadd, schedConstraints)
       }
 
     val sendClauses =
       for ((p, pn) <- processes.zipWithIndex;
            c <- processOutChans(pn);
-           cn = allChans indexOf c) yield {
+           cn = allChans indexOf c;
+           (schedFrom, SendEvent(`c`), schedTo) <- finalSystemSchedule.transitions) yield {
         val postArgs =
           globalPreState.args.updated(stateChanQueueOffset + cn, chanQueuePost(cn))
                              .updated(stateEventHistOffset + pn, eventHistPost(pn))
+                             .updated(stateSystemScheduleStateOffset, schedStatePost)
         val value =
           c.sort newConstant "value"
         val event =
@@ -396,20 +437,24 @@ class Encoder(network               : KPN.Network,
           channelQueues(cn).enqueue(chanQueuePre(cn), value, chanQueuePost(cn))
         val eventhistadd =
           processEventHistories(pn).add(eventHistPre(pn), event, eventHistPost(pn))
+        val schedConstraints =
+          (schedStatePre === schedFrom) & (schedStatePost === schedTo)
 
         globalState(postArgs : _*) :- (globalPreState,
                                        summaryFor(pn,
                                                   procChanHist(pn) ++
                                                     List(eventHistPre(pn), event)),
-                                       enc, eventhistadd)
+                                       enc, eventhistadd, schedConstraints)
       }
 
     val errorClauses =
-      for ((p, pn) <- processes.zipWithIndex) yield {
+      for ((p, pn) <- processes.zipWithIndex;
+           (schedFrom, ErrorEvent, _) <- finalSystemSchedule.transitions) yield {
         false :- (globalPreState,
                   summaryFor(pn,
                              procChanHist(pn) ++
-                               List(eventHistPre(pn), errorEvent())))
+                               List(eventHistPre(pn), errorEvent())),
+                  schedStatePre === schedFrom)
       }
 
     List(initClause) ++ recvClauses ++ sendClauses ++ errorClauses
