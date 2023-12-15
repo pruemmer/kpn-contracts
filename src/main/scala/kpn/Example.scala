@@ -35,7 +35,7 @@ object Nodes {
           (eventHist.last.isSend(out) & event.isRecv(in1)) |
           (eventHist.last.isRecv(in1) & event.isRecv(in2)) |
           (eventHist.last.isRecv(in2) & event.isSend(out) &
-             event.sentValue(out) === hist(in1).last + hist(in2).last))
+             event.valueSent(out) === hist(in1).last + hist(in2).last))
     }
   }
 
@@ -59,11 +59,11 @@ object Nodes {
 
       ite(eventHist.isEmpty,
 
-          event.isSend(out) & (event.sentValue(out) === init),
+          event.isSend(out) & (event.valueSent(out) === init),
 
           (eventHist.last.isSend(out) & event.isRecv(in)) |
           (eventHist.last.isRecv(in)  & event.isSend(out) &
-             event.sentValue(out) >= hist(in).last))
+             event.valueSent(out) >= hist(in).last))
     }
   }
 
@@ -85,11 +85,11 @@ object Nodes {
       ite(eventHist.isEmpty,
           event.isRecv(in),
           (eventHist.last.isRecv(in) & event.isSend(outs.head) &
-             (event.sentValue(outs.head) === hist(in).last)) |
+             (event.valueSent(outs.head) === hist(in).last)) |
           (eventHist.last.isSend(outs.last) & event.isRecv(in)) |
             or(for (Seq(c, d) <- outs sliding 2)
                yield (eventHist.last.isSend(c) & event.isSend(d) &
-                        (event.sentValue(d) === hist(in).last))))
+                        (event.valueSent(d) === hist(in).last))))
     }
 
   def AssertImpl(in : Channel, prop : ITerm => IFormula,
@@ -421,15 +421,15 @@ object ExampleProgSum {
 
       ite(eventHist.isEmpty,
 
-          event.isSend(in1) & event.sentValue(in1) >= 0,
+          event.isSend(in1) & event.valueSent(in1) >= 0,
 
           (eventHist.last.isSend(in1) & event.isSend(in2) &
-             event.sentValue(in2) === 1) |
+             event.valueSent(in2) === 1) |
           (eventHist.last.isSend(in2) & event.isRecv(out)) |
           (eventHist.last.isRecv(out) & hist(out).last < 0 &
              event.isError) |
           (eventHist.last.isRecv(out) & event.isSend(in1) &
-             event.sentValue(in1) >= 0))
+             event.valueSent(in1) >= 0))
     }
 
   val summaries : Map[Int, Encoder.Summary] =

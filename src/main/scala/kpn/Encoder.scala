@@ -181,7 +181,7 @@ object Encoder {
   trait RichEventTerm {
     def isRecv(c : KPN.Channel) : IFormula
     def isSend(c : KPN.Channel) : IFormula
-    def sentValue(c : KPN.Channel) : ITerm
+    def valueSent(c : KPN.Channel) : ITerm
     def isError : IFormula
   }
 
@@ -265,7 +265,7 @@ class Encoder(network               : KPN.Network,
         eventADT.hasCtor(t, (allChans indexOf c) + CN)
       def isSend(c : KPN.Channel) : IFormula =
         eventADT.hasCtor(t, allChans indexOf c)
-      def sentValue(c : KPN.Channel) : ITerm =
+      def valueSent(c : KPN.Channel) : ITerm =
         eventADT.selectors(allChans indexOf c)(0)(t)
       def isError : IFormula =
         eventADT.hasCtor(t, 2*CN)
