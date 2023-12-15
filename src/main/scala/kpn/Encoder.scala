@@ -208,7 +208,13 @@ object Encoder {
    * as an automaton over the events on the channels.
    */
   case class Schedule(initial : Int,
-                      transitions : Seq[(Int, Event, Int)])
+                      transitions : Seq[(Int, Event, Int)]) {
+    lazy val states : Set[Int] = {
+      (Iterator(initial) ++
+       (for ((s1, _, s2) <- transitions.iterator;
+             s <- Iterator(s1, s2)) yield s)).toSet
+    }
+  }
 
 }
 
