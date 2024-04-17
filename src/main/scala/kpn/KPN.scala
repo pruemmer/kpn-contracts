@@ -9,7 +9,7 @@ import ap.util.Seqs
 
 import lazabs.GlobalParameters
 import lazabs.horn.bottomup.SimpleWrapper
-import lazabs.horn.bottomup.Util
+import lazabs.horn.Util
 import lazabs.horn.bottomup.HornPredAbs.predArgumentSorts
 
 /**

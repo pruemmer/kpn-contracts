@@ -4,11 +4,11 @@ version := "0.1"
 
 scalaVersion := "2.11.12"
 
-fork in run          := true
+run / fork := true
 
-cancelable in Global := true
+Global / cancelable := true
 
-resolvers += ("uuverifiers" at "http://logicrunch.research.it.uu.se/maven/").withAllowInsecureProtocol(true)
+resolvers += "uuverifiers" at "https://eldarica.org/maven/"
 
 //    libraryDependencies += "uuverifiers" %% "princess" % "2021-03-10"
 libraryDependencies += "uuverifiers" %% "eldarica" % "nightly-SNAPSHOT"
