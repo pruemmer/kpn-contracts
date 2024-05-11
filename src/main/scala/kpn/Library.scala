@@ -8,7 +8,36 @@ object KPNNodes {
   import KPN._
   import IExpression._
 
+  /**
+    * Node representing inputs to the network of type <code>sort</code>.
+    */
+  def InputImpl(out : Channel) = {
+    val c = out.sort newConstant "c"
+
+    Prog(
+        While (true) (
+            Havoc(c),
+            c --> out
+        )
+    )
+  }
+
+  def AbsImpl(in : Channel, out : Channel) = {
+    require(in.sort == Sort.Integer && out.sort == Sort.Integer)
+    val c = Sort.Integer newConstant "c"
+
+    Prog(
+        While (true) (
+            c <-- in,
+            ite(c >= 0, c, 0) --> out
+        )
+    )
+  }
+
   def AddImpl(in1 : Channel, in2 : Channel, out : Channel) = {
+    require(in1.sort == Sort.Integer &&
+            in2.sort == Sort.Integer &&
+            out.sort == Sort.Integer)
     val c = Sort.Integer newConstant "c"
     val d = Sort.Integer newConstant "d"
 
@@ -37,9 +66,9 @@ object KPNNodes {
     }
   }
 
-  def DelayImpl(init : ITerm, in : Channel, out : Channel,
-                sort : Sort = Sort.Integer) = {
-    val c = sort newConstant "c"
+  def DelayImpl(init : ITerm, in : Channel, out : Channel) = {
+    require(in.sort == out.sort)
+    val c = in.sort newConstant "c"
 
     Prog(
       init --> out,
@@ -50,8 +79,7 @@ object KPNNodes {
     )
   }
 
-  def DelayContract(init : ITerm, in : Channel, out : Channel,
-                    sort : Sort = Sort.Integer) : Encoder.Summary = {
+  def DelayContract(init : ITerm, in : Channel, out : Channel) : Encoder.Summary = {
     (hist, eventHist, event, api) => {
       import api._
 
@@ -65,8 +93,10 @@ object KPNNodes {
     }
   }
 
-  def SplitImpl(sort : Sort, in : Channel, outs : Channel*) = {
-    val c = sort newConstant "c"
+  def SplitImpl(in : Channel, outs : Channel*) = {
+    require(outs.map(_.sort).toSet subsetOf Set(in.sort))
+    val c = in.sort newConstant "c"
+
     Prog(
       While (true) (
         (List(c <-- in) ++
@@ -75,8 +105,7 @@ object KPNNodes {
     )
   }
 
-  def SplitContract(sort : Sort, in : Channel,
-                    outs : Channel*) : Encoder.Summary =
+  def SplitContract(in : Channel, outs : Channel*) : Encoder.Summary =
     (hist, eventHist, event, api) => {
       import api._
 
@@ -90,9 +119,8 @@ object KPNNodes {
                         (event.valueSent(d) === hist(in).last))))
     }
 
-  def AssertImpl(in : Channel, prop : ITerm => IFormula,
-                 sort : Sort = Sort.Integer) = {
-    val c = sort newConstant "c"
+  def AssertImpl(in : Channel, prop : ITerm => IFormula) = {
+    val c = in.sort newConstant "c"
 
     Prog(
       While (true) (

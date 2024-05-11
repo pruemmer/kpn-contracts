@@ -557,6 +557,14 @@ class Encoder(network               : KPN.Network,
             clauses      += (postPred(postArgs : _*) :- toPre(prePred))
           }
 
+          case Havoc(v) => {
+            val ind      = consts indexOf v
+            val fresh    = (Sort sortOf v) newConstant (v.name + "_fresh")
+            val postArgs = preAtom.args.updated(constsOffset + ind,
+                                                IConstant(fresh))
+            clauses      += (postPred(postArgs : _*) :- toPre(prePred))
+          }
+
           case Assert(cond) => {
             val event       = errorEvent()
             val summaryArgs = chanHistsPre ++ List(eventHistPre, event)

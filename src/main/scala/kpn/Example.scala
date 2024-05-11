@@ -241,6 +241,30 @@ object ExampleProg3Unsafe {
 
 }
 
+object InputVerify extends App {
+
+  import KPN._
+  import IExpression._
+
+  val c1 = new Channel("c1", Sort.Integer)
+  val c2 = new Channel("c2", Sort.Integer)
+
+  val network = Network(List(
+    KPNNodes.InputImpl(c1),
+    KPNNodes.AbsImpl(c1, c2),
+    KPNNodes.AssertImpl(c2, _ >= 0)
+  ))
+
+  val schedule : Encoder.Schedule =
+    Encoder.Schedule(0, List((0, Encoder.SendEvent(c1), 1),
+                             (1, Encoder.RecvEvent(c1), 2),
+                             (2, Encoder.SendEvent(c2), 3),
+                             (3, Encoder.RecvEvent(c2), 4),
+                             (3, Encoder.RecvEvent(c2), 0),
+                             (4, Encoder.ErrorEvent, 4)))
+
+  SolveUtil.solve("InputVerify", network, schedule = Some(schedule))
+}
 
 object AddIncVerify extends App {
 
@@ -381,14 +405,14 @@ object ExampleProgFib {
     Network(List(KPNNodes.DelayImpl (0, ek, fk),
                  KPNNodes.AddImpl   (ck, fk, ak),
                  KPNNodes.DelayImpl (1, ak, bk),
-                 KPNNodes.SplitImpl (Sort.Integer, bk, ck, dk, ek),
+                 KPNNodes.SplitImpl (bk, ck, dk, ek),
                  KPNNodes.AssertImpl(dk, _ >= 0)))
 
   val summaries : Map[Int, Encoder.Summary] =
     Map(0 -> KPNNodes.DelayContract(0, ek, fk),
         1 -> KPNNodes.AddContract(ck, fk, ak),
         2 -> KPNNodes.DelayContract(1, ak, bk),
-        3 -> KPNNodes.SplitContract(Sort.Integer, bk, ck, dk, ek))
+        3 -> KPNNodes.SplitContract(bk, ck, dk, ek))
 
   val schedule : Encoder.Schedule =
     Encoder.Schedule(0, List((0, Encoder.SendEvent(bk), 1),
