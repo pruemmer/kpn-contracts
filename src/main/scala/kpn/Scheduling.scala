@@ -105,7 +105,7 @@ object Scheduler {
    * behaviour of a program.
    */
   def progEpsSchedule(p : Prog) : EpsSchedule = p match {
-    case Skip | _ : Assign =>
+    case Skip | _ : Assign | _ : Havoc =>
       EpsSchedule(0, List(), Set(0))
     case Sequence(p1, p2) =>
       progEpsSchedule(p1) ++ progEpsSchedule(p2)
