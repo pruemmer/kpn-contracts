@@ -466,6 +466,16 @@ object FibonacciVerify extends App {
 
 }
 
+object ScheduleExample extends App {
+
+  import Scheduler._
+
+  println(progEpsSchedule(ExampleProg2Unsafe.procA).toSchedule)
+  println(progEpsSchedule(ExampleProg2Unsafe.procB).toSchedule)
+  println(progEpsSchedule(ExampleProgSum.procInc).toSchedule)
+
+}
+
 object ExampleProgFib {
 
   import KPN._
