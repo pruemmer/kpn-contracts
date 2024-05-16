@@ -5,107 +5,6 @@ package kpn
 import ap.parser._
 import ap.theories.ADT
 
-object Nodes {
-
-  import KPN._
-  import IExpression._
-
-  def AddImpl(in1 : Channel, in2 : Channel, out : Channel) = {
-    val c = Sort.Integer newConstant "c"
-    val d = Sort.Integer newConstant "d"
-
-    Prog(
-      While (true) (
-        c <-- in1,
-        d <-- in2,
-        (c + d) --> out
-      )
-    )
-  }
-
-  def AddContract(in1 : Channel, in2 : Channel,
-                  out : Channel) : Encoder.Summary = {
-    (hist, eventHist, event, api) => {
-      import api._
-
-      ite(eventHist.isEmpty,
-
-          event.isRecv(in1),
-
-          (eventHist.last.isSend(out) & event.isRecv(in1)) |
-          (eventHist.last.isRecv(in1) & event.isRecv(in2)) |
-          (eventHist.last.isRecv(in2) & event.isSend(out) &
-             event.valueSent(out) === hist(in1).last + hist(in2).last))
-    }
-  }
-
-  def DelayImpl(init : ITerm, in : Channel, out : Channel,
-                sort : Sort = Sort.Integer) = {
-    val c = sort newConstant "c"
-
-    Prog(
-      init --> out,
-      While (true) (
-        c <-- in,
-        c --> out
-      )
-    )
-  }
-
-  def DelayContract(init : ITerm, in : Channel, out : Channel,
-                    sort : Sort = Sort.Integer) : Encoder.Summary = {
-    (hist, eventHist, event, api) => {
-      import api._
-
-      ite(eventHist.isEmpty,
-
-          event.isSend(out) & (event.valueSent(out) === init),
-
-          (eventHist.last.isSend(out) & event.isRecv(in)) |
-          (eventHist.last.isRecv(in)  & event.isSend(out) &
-             event.valueSent(out) >= hist(in).last))
-    }
-  }
-
-  def SplitImpl(sort : Sort, in : Channel, outs : Channel*) = {
-    val c = sort newConstant "c"
-    Prog(
-      While (true) (
-        (List(c <-- in) ++
-           (for (out <- outs) yield (c --> out))) : _*
-      )
-    )
-  }
-
-  def SplitContract(sort : Sort, in : Channel,
-                    outs : Channel*) : Encoder.Summary =
-    (hist, eventHist, event, api) => {
-      import api._
-
-      ite(eventHist.isEmpty,
-          event.isRecv(in),
-          (eventHist.last.isRecv(in) & event.isSend(outs.head) &
-             (event.valueSent(outs.head) === hist(in).last)) |
-          (eventHist.last.isSend(outs.last) & event.isRecv(in)) |
-            or(for (Seq(c, d) <- outs sliding 2)
-               yield (eventHist.last.isSend(c) & event.isSend(d) &
-                        (event.valueSent(d) === hist(in).last))))
-    }
-
-  def AssertImpl(in : Channel, prop : ITerm => IFormula,
-                 sort : Sort = Sort.Integer) = {
-    val c = sort newConstant "c"
-
-    Prog(
-      While (true) (
-        c <-- in,
-        Assert(prop(c))
-      )
-    )
-  }
-
-}
-
 object ExampleProg1 {
 
   import KPN._
@@ -342,6 +241,30 @@ object ExampleProg3Unsafe {
 
 }
 
+object InputVerify extends App {
+
+  import KPN._
+  import IExpression._
+
+  val c1 = new Channel("c1", Sort.Integer)
+  val c2 = new Channel("c2", Sort.Integer)
+
+  val network = Network(List(
+    KPNNodes.InputImpl(c1),
+    KPNNodes.AbsImpl(c1, c2),
+    KPNNodes.AssertImpl(c2, _ >= 0)
+  ))
+
+  val schedule : Encoder.Schedule =
+    Encoder.Schedule(0, List((0, Encoder.SendEvent(c1), 1),
+                             (1, Encoder.RecvEvent(c1), 2),
+                             (2, Encoder.SendEvent(c2), 3),
+                             (3, Encoder.RecvEvent(c2), 4),
+                             (3, Encoder.RecvEvent(c2), 0),
+                             (4, Encoder.ErrorEvent, 4)))
+
+  SolveUtil.solve("InputVerify", network, schedule = Some(schedule))
+}
 
 object AddIncVerify extends App {
 
@@ -392,7 +315,7 @@ object ExampleProgSum {
    */
 
   val procSum =
-    Nodes.AddImpl(in1, in2, out)
+    KPNNodes.AddImpl(in1, in2, out)
 
   /**
    * Incrementing process, using process Sum to increment the
@@ -413,7 +336,7 @@ object ExampleProgSum {
   val network = Network(List(procSum, procInc))
 
   val SumSummary : Encoder.Summary =
-    Nodes.AddContract(in1, in2, out)
+    KPNNodes.AddContract(in1, in2, out)
 
   val IncSummary : Encoder.Summary =
     (hist, eventHist, event, api) => {
@@ -489,17 +412,17 @@ object ExampleProgFib {
   val fk = new Channel("fk", Sort.Integer)
 
   val network =
-    Network(List(Nodes.DelayImpl (0, ek, fk),
-                 Nodes.AddImpl   (ck, fk, ak),
-                 Nodes.DelayImpl (1, ak, bk),
-                 Nodes.SplitImpl (Sort.Integer, bk, ck, dk, ek),
-                 Nodes.AssertImpl(dk, _ >= 0)))
+    Network(List(KPNNodes.DelayImpl (0, ek, fk),
+                 KPNNodes.AddImpl   (ck, fk, ak),
+                 KPNNodes.DelayImpl (1, ak, bk),
+                 KPNNodes.SplitImpl (bk, ck, dk, ek),
+                 KPNNodes.AssertImpl(dk, _ >= 0)))
 
   val summaries : Map[Int, Encoder.Summary] =
-    Map(0 -> Nodes.DelayContract(0, ek, fk),
-        1 -> Nodes.AddContract(ck, fk, ak),
-        2 -> Nodes.DelayContract(1, ak, bk),
-        3 -> Nodes.SplitContract(Sort.Integer, bk, ck, dk, ek))
+    Map(0 -> KPNNodes.DelayContract(0, ek, fk),
+        1 -> KPNNodes.AddContract(ck, fk, ak),
+        2 -> KPNNodes.DelayContract(1, ak, bk),
+        3 -> KPNNodes.SplitContract(bk, ck, dk, ek))
 
   val schedule : Encoder.Schedule =
     Encoder.Schedule(0, List((0, Encoder.SendEvent(bk), 1),

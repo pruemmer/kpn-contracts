@@ -9,7 +9,7 @@ import ap.util.Seqs
 
 import lazabs.GlobalParameters
 import lazabs.horn.bottomup.SimpleWrapper
-import lazabs.horn.bottomup.Util
+import lazabs.horn.Util
 import lazabs.horn.bottomup.HornPredAbs.predArgumentSorts
 
 /**
@@ -30,6 +30,7 @@ object KPN {
   case object Skip                                              extends Prog
 
   case class  Assign    (v : ConstantTerm, rhs : ITerm)         extends Prog
+  case class  Havoc     (v : ConstantTerm)                      extends Prog
   case class  Sequence  (left : Prog, right : Prog)             extends Prog
   case class  IfThenElse(cond : IFormula, b1 : Prog, b2 : Prog) extends Prog
   case class  While     (cond : IFormula, body : Prog)          extends Prog
@@ -49,6 +50,11 @@ object KPN {
 
   def While(cond : IFormula)(body : Prog*) : Prog =
     While(cond, Prog(body : _*))
+
+  object Havoc {
+    def apply(v1 : ConstantTerm, v2 : ConstantTerm, v3 : ConstantTerm*) : Prog =
+      Prog(List(Havoc(v1), Havoc(v2)) ++ (for (v <- v3) yield Havoc(v)) : _*)
+  }
 
   implicit def var2LHS(v : ConstantTerm) = new AnyRef {
     def :=(that : ITerm) = Assign(v, that)
@@ -79,6 +85,7 @@ object KPN {
   def constants(p : Prog) : Set[ConstantTerm] = p match {
     case Skip                     => Set()
     case Assign(c, t)             => Set(c) ++ (SymbolCollector constants t)
+    case Havoc(c)                 => Set(c)
     case Sequence(p1, p2)         => constants(p1) ++ constants(p2)
     case IfThenElse(cond, p1, p2) => constants(p1) ++ constants(p2) ++
                                      (SymbolCollector constants cond)
