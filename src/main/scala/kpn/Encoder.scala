@@ -194,37 +194,6 @@ object Encoder {
   type Summary = (Map[KPN.Channel, History], History,
                   ITerm, EventAPI) => IFormula
 
-  //////////////////////////////////////////////////////////////////////////////
-
-  sealed abstract class Event
-  case object ErrorEvent                 extends Event
-
-  abstract class ChannelEvent(c : KPN.Channel) extends Event
-  case class     RecvEvent(_c : KPN.Channel) extends ChannelEvent(_c)
-  case class     SendEvent(_c : KPN.Channel) extends ChannelEvent(_c)
-
-  object Schedule {
-    type Transition = (Int, Event, Int)
-  }
-
-  /**
-   * Class to represent schedules of the overall system, represented
-   * as an automaton over the events on the channels.
-   */
-  case class Schedule(initial : Int,
-                      transitions : Seq[Schedule.Transition]) {
-    import Schedule._
-
-    lazy val states : Set[Int] = {
-      (Iterator(initial) ++
-       (for ((s1, _, s2) <- transitions.iterator;
-             s <- Iterator(s1, s2)) yield s)).toSet
-    }
-
-    def outgoing(state : Int) : Seq[Transition] =
-      for (t@(`state`, _, _) <- transitions) yield t
-  }
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -242,13 +211,14 @@ class Encoder(network               : KPN.Network,
                 Encoder.ListHistoryEncoder,
               summaries             : Map[Int, Encoder.Summary] =
                 Map(),
-              systemSchedule        : Option[Encoder.Schedule] =
+              systemSchedule        : Option[Scheduler.Schedule] =
                 None) {
 
   import KPN._
   import Encoder._
   import IExpression._
   import HornClauses._
+  import Scheduler.{Schedule, RecvEvent, SendEvent, ErrorEvent}
 
   import network.{processes, processConsts, processInChans, processOutChans,
                   allChans}

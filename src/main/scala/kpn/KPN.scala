@@ -148,7 +148,7 @@ object SolveUtil {
   def solve(name         : String,
             network      : KPN.Network,
             contracts    : Map[Int, Encoder.Summary] = Map(),
-            schedule     : Option[Encoder.Schedule] = None,
+            schedule     : Option[Scheduler.Schedule] = None,
             debug        : Boolean = false,
             printSol     : Boolean = false,
             queueEncoder : Encoder.QueueEncoder =

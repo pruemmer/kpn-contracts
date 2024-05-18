@@ -10,13 +10,41 @@ import scala.collection.mutable.{LinkedHashSet, ArrayBuffer,
 object Scheduler {
 
   import KPN._
-  import Encoder.{Event, ErrorEvent, RecvEvent, SendEvent, Schedule}
+
+  sealed abstract class ScheduleEvent
+  case object ErrorEvent extends ScheduleEvent
+
+  abstract class ChannelEvent(c : KPN.Channel) extends ScheduleEvent
+  case class     RecvEvent(_c : KPN.Channel) extends ChannelEvent(_c)
+  case class     SendEvent(_c : KPN.Channel) extends ChannelEvent(_c)
+
+  object Schedule {
+    type Transition = (Int, ScheduleEvent, Int)
+  }
+
+  /**
+   * Class to represent schedules of the overall system, represented
+   * as an automaton over the events on the channels.
+   */
+  case class Schedule(initial : Int, transitions : Seq[Schedule.Transition]) {
+    import Schedule._
+
+    lazy val states : Set[Int] = {
+      (Iterator(initial) ++
+       (for ((s1, _, s2) <- transitions.iterator;
+             s <- Iterator(s1, s2)) yield s)).toSet
+    }
+
+    def outgoing(state : Int) : Seq[Transition] =
+      for (t@(`state`, _, _) <- transitions) yield t
+  }
+
 
   /**
    * Finite-state automata representing communication behaviours.
    */
   case class EpsSchedule(initial : Int,
-                         transitions : Seq[(Int, Option[Event], Int)],
+                         transitions : Seq[(Int, Option[ScheduleEvent], Int)],
                          accepting : Set[Int]) {
     lazy val states : Set[Int] = {
       (Iterator(initial) ++ accepting.iterator ++
@@ -80,7 +108,7 @@ object Scheduler {
     }
 
     def toSchedule : Schedule = {
-      val newTransitions   = new ArrayBuffer[(Int, Event, Int)]
+      val newTransitions   = new ArrayBuffer[(Int, ScheduleEvent, Int)]
       var todo : List[Int] = List(initial)
       val statesDone       = new MHashSet[Int]
 
