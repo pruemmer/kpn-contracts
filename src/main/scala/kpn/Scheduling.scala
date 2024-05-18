@@ -4,7 +4,8 @@ package kpn
 
 import ap.util.Seqs
 
-import scala.collection.mutable.{LinkedHashSet, ArrayBuffer, HashSet => MHashSet}
+import scala.collection.mutable.{LinkedHashSet, ArrayBuffer,
+                                 HashSet => MHashSet, HashMap => MHashMap}
 
 object Scheduler {
 
@@ -119,6 +120,82 @@ object Scheduler {
       EpsSchedule(0, List((0, Some(SendEvent(ch)), 1)), Set(1))
     case Receive(ch, _) =>
       EpsSchedule(0, List((0, Some(RecvEvent(ch)), 1)), Set(1))
+  }
+
+  /**
+   * Class to infer receive operations that have to be performed in individual
+   * states of a schedule before any output or error can possibly occur.
+   */
+  class GuardAnalysis(schedule : Schedule) {
+    import GuardAnalysis._
+    import Schedule.Transition
+
+    private val state2RecvSet = new MHashMap[Int, RecvSet]
+    private val transition2RecvSet = new MHashMap[Schedule.Transition, RecvSet]
+
+    for ((state, ErrorEvent | _ : SendEvent, _) <- schedule.transitions)
+      state2RecvSet.put(state, EmptyRecvSet)
+
+    private var cont = true
+    while (cont) {
+      cont = false
+
+      for (t@(fromS, RecvEvent(ch), toS) <- schedule.transitions;
+           toRS <- state2RecvSet get toS)
+        transition2RecvSet.put(t, add(toRS, Map(ch -> 1)))
+
+      for (state <- schedule.states) {
+        val readSets =
+          for (t <- schedule.outgoing(state);
+               rs <- transition2RecvSet get t)
+          yield rs
+        if (!readSets.isEmpty) {
+          val newRS = readSets.reduceLeft(min(_, _))
+          val oldRS = state2RecvSet.getOrElse(state, newRS)
+          val newRS2 = min(newRS, oldRS)
+          (state2RecvSet get state) match {
+            case Some(`newRS2`) =>
+              // nothing
+            case _ => {
+              state2RecvSet.put(state, newRS2)
+              cont = true
+            }
+          }
+        }
+      }
+    }
+
+    /**
+     * Number of receives from channels that a schedule will
+     * perform at least, from the given state, before an error or
+     * any output can occur. Result None indicates
+     * that no errors or outputs can be reached altogether.
+     */
+    def necessaryRecvsFromState(s : Int) : Option[RecvSet] =
+      state2RecvSet.get(s)
+
+    /**
+     * Number of receives from channels that a schedule will
+     * perform at least, when starting with the given transition,
+     * before an error or any output can occur. Result None indicates
+     * that no errors or outputs can be reached altogether.
+     */
+    def necessaryRecvsFromTransition(t : Transition) : Option[RecvSet] =
+      transition2RecvSet.get(t)
+  }
+  
+  object GuardAnalysis {
+    type RecvSet = Map[Channel, Int]
+
+    private val EmptyRecvSet : RecvSet = Map()
+
+    private def add(a : RecvSet, b : RecvSet) : RecvSet =
+      (for (ch <- (a.keySet ++ b.keySet).iterator)
+       yield (ch -> (a.getOrElse(ch, 0) + b.getOrElse(ch, 0)))).toMap
+
+    private def min(a : RecvSet, b : RecvSet) : RecvSet =
+      (for (ch <- (a.keySet & b.keySet).iterator)
+       yield (ch -> (a.getOrElse(ch, 0) min b.getOrElse(ch, 0)))).toMap
   }
 
 }

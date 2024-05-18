@@ -203,17 +203,26 @@ object Encoder {
   case class     RecvEvent(_c : KPN.Channel) extends ChannelEvent(_c)
   case class     SendEvent(_c : KPN.Channel) extends ChannelEvent(_c)
 
+  object Schedule {
+    type Transition = (Int, Event, Int)
+  }
+
   /**
    * Class to represent schedules of the overall system, represented
    * as an automaton over the events on the channels.
    */
   case class Schedule(initial : Int,
-                      transitions : Seq[(Int, Event, Int)]) {
+                      transitions : Seq[Schedule.Transition]) {
+    import Schedule._
+
     lazy val states : Set[Int] = {
       (Iterator(initial) ++
        (for ((s1, _, s2) <- transitions.iterator;
              s <- Iterator(s1, s2)) yield s)).toSet
     }
+
+    def outgoing(state : Int) : Seq[Transition] =
+      for (t@(`state`, _, _) <- transitions) yield t
   }
 
 }
