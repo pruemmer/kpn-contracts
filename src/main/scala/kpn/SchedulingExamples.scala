@@ -1,6 +1,7 @@
 package kpn
 
 import ap.parser._
+import kpn.Encoder.Capacity2HistoryEncoder
 
 object InputScheduling extends App {
 
@@ -41,7 +42,9 @@ object NetworkScheduling extends App {
                  KPNNodes.AddImpl   (ck, fk, ak),
                  KPNNodes.DelayImpl (1, ak, bk),
                  KPNNodes.SplitImpl (bk, ck, dk, ek, out),
-                 KPNNodes.AssertImpl(dk, _ >= 0)))
+                 KPNNodes.AssertWin2Impl(dk, (x0, x1) => x0 <= x1)
+                 //KPNNodes.AssertImpl(dk, _ >= 0)
+                 ))
 
   val schedules =
     for (p <- network.processes)
@@ -51,7 +54,7 @@ object NetworkScheduling extends App {
 
   SolveUtil.solve("Fibonacci, inferring contracts, assuming system schedule",
                   network,
+                  historyEncoder = Capacity2HistoryEncoder,
                   schedule = Some(scheduler.result))
-
 
 }

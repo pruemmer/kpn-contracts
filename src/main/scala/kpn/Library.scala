@@ -130,4 +130,18 @@ object KPNNodes {
     )
   }
 
+  def AssertWin2Impl(in : Channel, prop : (ITerm, ITerm) => IFormula) = {
+    val x0 = in.sort newConstant "x0"
+    val x1 = in.sort newConstant "x1"
+
+    Prog(
+      x0 <-- in,
+      While (true) (
+        x1 <-- in,
+        Assert(prop(x0, x1)),
+        x0 := x1
+      )
+    )
+  }
+
 }

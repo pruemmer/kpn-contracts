@@ -388,7 +388,7 @@ object Scheduler {
 
     val result =
       Schedule(indexOf(initialState), networkTransitions.toVector)
-println(result)
+
   }
 
 }

@@ -152,7 +152,9 @@ object SolveUtil {
             debug        : Boolean = false,
             printSol     : Boolean = false,
             queueEncoder : Encoder.QueueEncoder =
-              Encoder.Capacity1QueueEncoder) : Unit = {
+              Encoder.Capacity1QueueEncoder,
+            historyEncoder : Encoder.HistoryEncoder =
+              Encoder.Capacity1HistoryEncoder) : Unit = {
     ap.util.Debug.enableAllAssertions(false)
     GlobalParameters.get.assertions = false
 
@@ -163,7 +165,7 @@ object SolveUtil {
     val encoder =
       new Encoder(network,
                   defaultQueueEncoder = queueEncoder,
-                  defaultHistoryEncoder = Encoder.Capacity1HistoryEncoder,
+                  defaultHistoryEncoder = historyEncoder,
                   summaries = contracts,
                   systemSchedule = schedule)
 

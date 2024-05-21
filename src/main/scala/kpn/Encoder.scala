@@ -153,6 +153,23 @@ object Encoder {
     }
   }
 
+  object Capacity2HistoryEncoder extends HistoryEncoder {
+    def apply(elementSort : Sort) = new HistoryEncoderInstance {
+      val name = elementSort.name + "_hist2"
+      val (sort, record, Seq(hist_empty, hist_value1, hist_value2)) =
+        ADT.createRecordType(name,
+                             List((name + "_empty", Sort.Bool),
+                                  (name + "_value1", elementSort),
+                                  (name + "_value2", elementSort)))
+      def isEmpty(t : ITerm) : IFormula =
+        t === record(ADT.BoolADT.True, elementSort.witness.get, elementSort.witness.get)
+      def add(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
+        post === record(ADT.BoolADT.False, el, hist_value1(pre))
+      def last(hist : ITerm) : ITerm =
+        hist_value1(hist)
+    }
+  }
+
   //////////////////////////////////////////////////////////////////////////////
 
   /**
