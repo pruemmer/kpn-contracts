@@ -25,7 +25,10 @@ object KPN {
    * Individual processes are written in the style of while programs.
    */
 
-  abstract sealed class Prog
+  abstract sealed class Prog {
+    def constants : Seq[ConstantTerm] =
+      progConstants(this).toSeq.sortBy(_.name)
+  }
 
   case object Skip                                              extends Prog
 
@@ -82,14 +85,14 @@ object KPN {
    * Some helper functions
    */
 
-  def constants(p : Prog) : Set[ConstantTerm] = p match {
+  def progConstants(p : Prog) : Set[ConstantTerm] = p match {
     case Skip                     => Set()
     case Assign(c, t)             => Set(c) ++ (SymbolCollector constants t)
     case Havoc(c)                 => Set(c)
-    case Sequence(p1, p2)         => constants(p1) ++ constants(p2)
-    case IfThenElse(cond, p1, p2) => constants(p1) ++ constants(p2) ++
+    case Sequence(p1, p2)         => progConstants(p1) ++ progConstants(p2)
+    case IfThenElse(cond, p1, p2) => progConstants(p1) ++ progConstants(p2) ++
                                      (SymbolCollector constants cond)
-    case While(cond, p)           => constants(p) ++
+    case While(cond, p)           => progConstants(p) ++
                                      (SymbolCollector constants cond)
     case Assert(cond)             => (SymbolCollector constants cond).toSet
     case Send(_, msg)             => (SymbolCollector constants msg).toSet
@@ -116,29 +119,37 @@ object KPN {
    * Networks
    */
 
-  case class Network(processes : IndexedSeq[Prog]) {
-    val processConsts   =
-      for (p <- processes) yield constants(p).toSeq.sortBy(_.name)
-    val processInChans : IndexedSeq[Seq[Channel]] =
-      for (p <- processes) yield inChannels(p).toSeq.sortBy(_.name)
-    val processOutChans : IndexedSeq[Seq[Channel]] =
-      for (p <- processes) yield outChannels(p).toSeq.sortBy(_.name)
+  abstract sealed class NetworkNode {
+    def constants : Seq[ConstantTerm]
+    def inChans   : Seq[Channel]
+    def outChans  : Seq[Channel]
+  }
 
+  case class ProgNode  (prog    : Prog)    extends NetworkNode {
+    def constants : Seq[ConstantTerm] = prog.constants
+    def inChans   : Seq[Channel]      = inChannels(prog).toSeq.sortBy(_.name)
+    def outChans  : Seq[Channel]      = outChannels(prog).toSeq.sortBy(_.name)
+  }
+
+//  case class SubnetNode(network : Network) extends NetworkNode
+
+  case class Network(processes : IndexedSeq[NetworkNode]) {
     // Channels have unique writers and readers
     assert((0 until processes.size) forall { i =>
              ((i+1) until processes.size) forall { j =>
-               Seqs.disjointSeq(processInChans(i).toSet, processInChans(j)) &&
-               Seqs.disjointSeq(processOutChans(i).toSet, processOutChans(j))
+               Seqs.disjointSeq(processes(i).inChans.toSet, processes(j).inChans) &&
+               Seqs.disjointSeq(processes(i).outChans.toSet, processes(j).outChans)
              }},
            "Channel with multiple readers or multiple writers")
 
     val allConsts : Seq[ConstantTerm] =
-      (for (cs <- processConsts; c <- cs) yield c).distinct
+      (for (n <- processes; c <- n.constants) yield c).distinct
     val allChans : Seq[Channel] =
-      (for (cs <- processInChans ++ processOutChans; c <- cs) yield c).distinct
+      (for (n <- processes; c <- n.inChans ++ n.outChans) yield c).distinct
   }
 
-  def Network(processes : Seq[Prog]) : Network = Network(processes.toIndexedSeq)
+  def Network(processes : Seq[Prog]) : Network =
+    Network(processes.map(ProgNode(_)).toIndexedSeq)
 
 }
 

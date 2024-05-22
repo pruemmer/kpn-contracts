@@ -17,11 +17,12 @@ object InputScheduling extends App {
     KPNNodes.AssertImpl(c2, _ >= 0)
   ))
 
+  /*
   println(Scheduler.progEpsSchedule(network.processes(0)).toSchedule)
   new Scheduler.GuardAnalysis(Scheduler.progEpsSchedule(network.processes(0)).toSchedule)
   println(Scheduler.progEpsSchedule(network.processes(2)))
   new Scheduler.GuardAnalysis(Scheduler.progEpsSchedule(network.processes(2)).toSchedule)
-
+*/
 }
 
 object NetworkScheduling extends App {
@@ -48,7 +49,7 @@ object NetworkScheduling extends App {
 
   val schedules =
     for (p <- network.processes)
-    yield Scheduler.progEpsSchedule(p).toSchedule
+    yield Scheduler.nodeEpsSchedule(p).toSchedule
 
   val scheduler = new Scheduler.NetworkScheduler(schedules)
 

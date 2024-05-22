@@ -193,13 +193,16 @@ object Encoder {
    */
   trait EventAPI {
     implicit def toRichTerm(t : ITerm) : RichEventTerm
+    def recvEvent(c : KPN.Channel) : ITerm
+    def errorEvent                 : ITerm
   }
 
   trait RichEventTerm {
-    def isRecv(c : KPN.Channel) : IFormula
-    def isSend(c : KPN.Channel) : IFormula
+    def isRecv   (c : KPN.Channel) : IFormula
+    def isSend   (c : KPN.Channel) : IFormula
+    def send     (c : KPN.Channel) : ITerm
     def valueSent(c : KPN.Channel) : ITerm
-    def isError : IFormula
+    def isError                    : IFormula
   }
 
   /**
@@ -210,6 +213,152 @@ object Encoder {
    */
   type Summary = (Map[KPN.Channel, History], History,
                   ITerm, EventAPI) => IFormula
+
+  /////////////////////////////////////////////////////////////////////////////
+  // Clauses about the individual processes
+
+  import KPN._
+  import Encoder._
+  import IExpression._
+  import HornClauses._
+
+  def pred2Atom(p : MonoSortedPredicate, prefix : String) : IAtom = {
+    val args =
+      for ((s, n) <- p.argSorts.zipWithIndex) yield (s newConstant (prefix + n))
+    p(args : _*)
+  }
+
+  def encodeProg(prog       : Prog,
+                 predPrefix : String,
+                 summary    : Seq[ITerm] => IFormula,
+                 inChans    : Seq[Channel],
+                 chanHists  : Seq[HistoryEncoderInstance],
+                 eventHist  : HistoryEncoderInstance,
+                 eventAPI   : EventAPI) : Seq[Clause] = {
+    import eventAPI._
+
+    val consts = prog.constants
+
+    val argSorts =
+      (chanHists map (_.sort)) ++
+       List(eventHist.sort) ++
+       (consts map (Sort sortOf _))
+
+    var cnt = 0
+    def newPred = {
+      cnt = cnt + 1
+      new MonoSortedPredicate(predPrefix + "_" + (cnt - 1), argSorts)
+    }
+
+    val eventOffset   = chanHists.size
+    val constsOffset  = chanHists.size + 1
+
+    val preAtom       = {
+      val p = newPred
+      val a = pred2Atom(p, "e")
+      newPred((a.args take constsOffset) ++ (consts map i) : _*)
+    }
+    val postAtom      = pred2Atom(newPred, "o")
+
+    val chanHistsPre  = preAtom.args take chanHists.size
+    val eventHistPre  = preAtom.args(chanHists.size)
+    val constsPre     = preAtom.args drop constsOffset
+    val chanHistsPost = postAtom.args take chanHists.size
+    val eventHistPost = postAtom.args(chanHists.size)
+    val constsPost    = postAtom.args drop constsOffset
+
+    val clauses       = new VectorBuilder[Clause]
+
+    clauses += (preAtom :- (and(for ((h, t) <- chanHists zip chanHistsPre)
+                                yield (h isEmpty t)),
+                            eventHist isEmpty eventHistPre,
+                            and(for (c <- constsPre)
+                                yield (c === Sort.sortOf(c).witness.get))))
+
+    def toPre(p : Predicate) = p(preAtom.args : _*)
+
+    def translate(p : Prog,
+                  prePred : Predicate,
+                  postPred : Predicate) : Unit = p match {
+          case Skip =>
+            clauses += (toPre(postPred) :- toPre(prePred))
+
+          case Sequence(left, right) => {
+            val intPred = newPred
+            translate(left, prePred, intPred)
+            translate(right, intPred, postPred)
+          }
+
+          case While(cond, body) => {
+            val headPred, startPred = newPred
+            clauses += (toPre(headPred)  :- toPre(prePred))
+            clauses += (toPre(startPred) :- (toPre(headPred), cond))
+            clauses += (toPre(postPred)  :- (toPre(headPred), ~cond))
+            translate(body, startPred, headPred)
+          }
+
+          case IfThenElse(cond, body1, body2) => {
+            val thenPred, elsePred = newPred
+            clauses += (toPre(thenPred) :- (toPre(prePred), cond))
+            clauses += (toPre(elsePred) :- (toPre(prePred), ~cond))
+            translate(body1, thenPred, postPred)
+            translate(body2, elsePred, postPred)
+          }
+
+          case Assign(v, rhs) => {
+            val ind      = consts indexOf v
+            val postArgs = preAtom.args.updated(constsOffset + ind, rhs)
+            clauses      += (postPred(postArgs : _*) :- toPre(prePred))
+          }
+
+          case Havoc(v) => {
+            val ind      = consts indexOf v
+            val fresh    = (Sort sortOf v) newConstant (v.name + "_fresh")
+            val postArgs = preAtom.args.updated(constsOffset + ind,
+                                                IConstant(fresh))
+            clauses      += (postPred(postArgs : _*) :- toPre(prePred))
+          }
+
+          case Assert(cond) => {
+            val event       = errorEvent
+            val summaryArgs = chanHistsPre ++ List(eventHistPre, event)
+            clauses += (summary(summaryArgs) :- (toPre(prePred), ~cond))
+            clauses += (toPre(postPred) :-(toPre(prePred), cond))
+          }
+
+          case Send(c, t) => {
+            val event       = t.send(c)
+            val summaryArgs = chanHistsPre ++ List(eventHistPre, event)
+            clauses += (summary(summaryArgs) :- toPre(prePred))
+
+            val eventConstr = eventHist.add(eventHistPre, event, eventHistPost)
+            val postArgs    = preAtom.args.updated(eventOffset, eventHistPost)
+            clauses += (postPred(postArgs : _*) :-(toPre(prePred), eventConstr))
+          }
+
+          case Receive(c, v) => {
+            val pcn         = inChans indexOf c
+            val event       = recvEvent(c)
+            val summaryArgs = chanHistsPre ++ List(eventHistPre, event)
+            clauses += (summary(summaryArgs) :- toPre(prePred))
+
+            val ind         = consts indexOf v
+            val value       = c.sort newConstant "value"
+            val chanConstr  = chanHists(pcn).add(chanHistsPre(pcn), value,
+                                                 chanHistsPost(pcn))
+            val eventConstr = eventHist.add(eventHistPre, event, eventHistPost)
+            val postArgs    = preAtom.args.updated(pcn, chanHistsPost(pcn))
+                                          .updated(eventOffset, eventHistPost)
+                                          .updated(constsOffset + ind, i(value))
+            clauses += (postPred(postArgs : _*) :-
+                          (toPre(prePred), chanConstr, eventConstr))
+          }
+        }
+
+    translate(prog, preAtom.pred, postAtom.pred)
+
+    clauses.result
+  }
 
 }
 
@@ -237,8 +386,7 @@ class Encoder(network               : KPN.Network,
   import HornClauses._
   import Scheduler.{Schedule, RecvEvent, SendEvent, ErrorEvent}
 
-  import network.{processes, processConsts, processInChans, processOutChans,
-                  allChans}
+  import network.{processes, allChans}
 
   val CN = allChans.size
   val PN = processes.size
@@ -261,24 +409,30 @@ class Encoder(network               : KPN.Network,
              sendEvents ++ recvEvents ++ List(errorEvent))
   }
 
+  val Seq(eventSort) = eventADT.sorts
+
+  val sendEvent  = eventADT.constructors take CN
+  val recvEvent  = eventADT.constructors drop CN take CN
+  val errorEvent = eventADT.constructors.last
+
   val eventAPI = new EventAPI {
     implicit def toRichTerm(t : ITerm) = new RichEventTerm {
       def isRecv(c : KPN.Channel) : IFormula =
         eventADT.hasCtor(t, (allChans indexOf c) + CN)
       def isSend(c : KPN.Channel) : IFormula =
         eventADT.hasCtor(t, allChans indexOf c)
+      def send(c : KPN.Channel) : ITerm =
+        sendEvent(allChans indexOf c)(t)
       def valueSent(c : KPN.Channel) : ITerm =
         eventADT.selectors(allChans indexOf c)(0)(t)
       def isError : IFormula =
         eventADT.hasCtor(t, 2*CN)
     }
+    def recvEvent(c : KPN.Channel) : ITerm =
+      Encoder.this.recvEvent(allChans indexOf c)()
+    def errorEvent : ITerm =
+      Encoder.this.errorEvent()
   }
-
-  val Seq(eventSort) = eventADT.sorts
-
-  val sendEvent  = eventADT.constructors take CN
-  val recvEvent  = eventADT.constructors drop CN take CN
-  val errorEvent = eventADT.constructors.last
 
   val channelQueues =
     for (chan <- allChans)
@@ -293,7 +447,7 @@ class Encoder(network               : KPN.Network,
   val processChanHistories =
     for (n <- 0 until PN)
     yield (for ((c, h) <- allChans zip channelHistories;
-                if processInChans(n) contains c)
+                if processes(n).inChans contains c)
            yield h)
 
   val summaryPreds =
@@ -319,7 +473,7 @@ class Encoder(network               : KPN.Network,
                          event : ITerm) : IFormula = {
     assert(summaries contains processId)
     val chans =
-      (for (((c, hist), t) <- (processInChans(processId) zip processChanHistories(processId))
+      (for (((c, hist), t) <- (processes(processId).inChans zip processChanHistories(processId))
                          zip chanHistories)
        yield (c -> new HistoryInstance(t, hist))).toMap
     val evs =
@@ -351,12 +505,6 @@ class Encoder(network               : KPN.Network,
                   yield (0, ev, 0)) ++ List((0, ErrorEvent, 0)))
     }
 
-  def pred2Atom(p : MonoSortedPredicate, prefix : String) : IAtom = {
-    val args =
-      for ((s, n) <- p.argSorts.zipWithIndex) yield (s newConstant (prefix + n))
-    p(args : _*)
-  }
-
   val globalClauses = {
     val globalPreState  = pred2Atom(globalState, "e")
     val globalPostState = pred2Atom(globalState, "o")
@@ -372,7 +520,7 @@ class Encoder(network               : KPN.Network,
 
     val procChanHist =
       for (pn <- 0 until PN)
-      yield (for (c <- processInChans(pn); cn = allChans indexOf c)
+      yield (for (c <- processes(pn).inChans; cn = allChans indexOf c)
              yield chanHistPre(cn))
 
     val initClause = {
@@ -392,7 +540,7 @@ class Encoder(network               : KPN.Network,
 
     val recvClauses =
       for ((p, pn) <- processes.zipWithIndex;
-           c <- processInChans(pn);
+           c <- processes(pn).inChans;
            cn = allChans indexOf c;
            (schedFrom, RecvEvent(`c`), schedTo) <- finalSystemSchedule.transitions) yield {
         val postArgs =
@@ -423,7 +571,7 @@ class Encoder(network               : KPN.Network,
 
     val sendClauses =
       for ((p, pn) <- processes.zipWithIndex;
-           c <- processOutChans(pn);
+           c <- processes(pn).outChans;
            cn = allChans indexOf c;
            (schedFrom, SendEvent(`c`), schedTo) <- finalSystemSchedule.transitions) yield {
         val postArgs =
@@ -465,147 +613,19 @@ class Encoder(network               : KPN.Network,
   //////////////////////////////////////////////////////////////////////////////
   // Clauses about the individual processes
 
-  val processClauses = {
-
-    val clauses =
-      for ((p, pn) <- processes.zipWithIndex) yield {
-
-        def summary(args : Seq[ITerm]) =
-          summaryFor(pn, args)
-
-        val chanHists =
-          for (c <- processInChans(pn); cn = allChans indexOf c)
-          yield channelHistories(cn)
-        val eventHist =
-          processEventHistories(pn)
-        val consts =
-          processConsts(pn)
-
-        val argSorts =
-          (chanHists map (_.sort)) ++
-            List(eventHist.sort) ++
-            (consts map (Sort sortOf _))
-
-        var cnt = 0
-        def newPred = {
-          cnt = cnt + 1
-          new MonoSortedPredicate("proc_" + pn + "_" + (cnt - 1), argSorts)
-        }
-
-        val eventOffset   = chanHists.size
-        val constsOffset  = chanHists.size + 1
-
-        val preAtom       = {
-          val p = newPred
-          val a = pred2Atom(p, "e")
-          newPred((a.args take constsOffset) ++ (consts map i) : _*)
-        }
-        val postAtom      = pred2Atom(newPred, "o")
-
-        val chanHistsPre  = preAtom.args take chanHists.size
-        val eventHistPre  = preAtom.args(chanHists.size)
-        val constsPre     = preAtom.args drop constsOffset
-        val chanHistsPost = postAtom.args take chanHists.size
-        val eventHistPost = postAtom.args(chanHists.size)
-        val constsPost    = postAtom.args drop constsOffset
-
-        val clauses       = new VectorBuilder[Clause]
-
-        clauses += (preAtom :- (and(for ((h, t) <- chanHists zip chanHistsPre)
-                                    yield (h isEmpty t)),
-                                eventHist isEmpty eventHistPre,
-                                and(for (c <- constsPre)
-                                    yield (c === Sort.sortOf(c).witness.get))))
-
-        def toPre(p : Predicate) = p(preAtom.args : _*)
-
-        def translate(p : Prog,
-                      prePred : Predicate,
-                      postPred : Predicate) : Unit = p match {
-          case Skip =>
-            clauses += (toPre(postPred) :- toPre(prePred))
-
-          case Sequence(left, right) => {
-            val intPred = newPred
-            translate(left, prePred, intPred)
-            translate(right, intPred, postPred)
-          }
-
-          case While(cond, body) => {
-            val headPred, startPred = newPred
-            clauses += (toPre(headPred)  :- toPre(prePred))
-            clauses += (toPre(startPred) :- (toPre(headPred), cond))
-            clauses += (toPre(postPred)  :- (toPre(headPred), ~cond))
-            translate(body, startPred, headPred)
-          }
-
-          case IfThenElse(cond, body1, body2) => {
-            val thenPred, elsePred = newPred
-            clauses += (toPre(thenPred) :- (toPre(prePred), cond))
-            clauses += (toPre(elsePred) :- (toPre(prePred), ~cond))
-            translate(body1, thenPred, postPred)
-            translate(body2, elsePred, postPred)
-          }
-
-          case Assign(v, rhs) => {
-            val ind      = consts indexOf v
-            val postArgs = preAtom.args.updated(constsOffset + ind, rhs)
-            clauses      += (postPred(postArgs : _*) :- toPre(prePred))
-          }
-
-          case Havoc(v) => {
-            val ind      = consts indexOf v
-            val fresh    = (Sort sortOf v) newConstant (v.name + "_fresh")
-            val postArgs = preAtom.args.updated(constsOffset + ind,
-                                                IConstant(fresh))
-            clauses      += (postPred(postArgs : _*) :- toPre(prePred))
-          }
-
-          case Assert(cond) => {
-            val event       = errorEvent()
-            val summaryArgs = chanHistsPre ++ List(eventHistPre, event)
-            clauses += (summary(summaryArgs) :- (toPre(prePred), ~cond))
-            clauses += (toPre(postPred) :-(toPre(prePred), cond))
-          }
-
-          case Send(c, t) => {
-            val cn          = allChans indexOf c
-            val event       = sendEvent(cn)(t)
-            val summaryArgs = chanHistsPre ++ List(eventHistPre, event)
-            clauses += (summary(summaryArgs) :- toPre(prePred))
-
-            val eventConstr = eventHist.add(eventHistPre, event, eventHistPost)
-            val postArgs    = preAtom.args.updated(eventOffset, eventHistPost)
-            clauses += (postPred(postArgs : _*) :-(toPre(prePred), eventConstr))
-          }
-
-          case Receive(c, v) => {
-            val cn          = allChans indexOf c
-            val pcn         = processInChans(pn) indexOf c
-            val event       = recvEvent(cn)()
-            val summaryArgs = chanHistsPre ++ List(eventHistPre, event)
-            clauses += (summary(summaryArgs) :- toPre(prePred))
-
-            val ind         = consts indexOf v
-            val value       = c.sort newConstant "value"
-            val chanConstr  = chanHists(pcn).add(chanHistsPre(pcn), value,
-                                                 chanHistsPost(pcn))
-            val eventConstr = eventHist.add(eventHistPre, event, eventHistPost)
-            val postArgs    = preAtom.args.updated(pcn, chanHistsPost(pcn))
-                                          .updated(eventOffset, eventHistPost)
-                                          .updated(constsOffset + ind, i(value))
-            clauses += (postPred(postArgs : _*) :-
-                          (toPre(prePred), chanConstr, eventConstr))
-          }
-        }
-
-        translate(p, preAtom.pred, postAtom.pred)
-
-        clauses.result
-      }
-
-    clauses.flatten
-  }
+  val processClauses =
+    for ((ProgNode(prog), pn) <- processes.zipWithIndex;
+         val chanHists =
+           for (c <- processes(pn).inChans; cn = allChans indexOf c)
+           yield channelHistories(cn);
+         clause <- encodeProg(prog,
+                              "proc_" + pn,
+                              summaryFor(pn, _),
+                              processes(pn).inChans,
+                              chanHists,
+                              processEventHistories(pn),
+                              eventAPI))
+    yield clause
 
   val allClauses : Seq[Clause] =
     globalClauses ++ processClauses ++ (channelQueues map (_.axioms)).flatten

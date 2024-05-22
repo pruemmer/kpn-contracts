@@ -161,6 +161,10 @@ object Scheduler {
       EpsSchedule(0, List((0, Some(RecvEvent(ch)), 1)), Set(1))
   }
 
+  def nodeEpsSchedule(n : NetworkNode) : EpsSchedule = n match {
+    case ProgNode(prog) => progEpsSchedule(prog)
+  }
+
   /**
    * Class to infer receive operations that have to be performed in individual
    * states of a schedule before any output or error can possibly occur.
