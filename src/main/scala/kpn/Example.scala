@@ -255,13 +255,13 @@ object InputVerify extends App {
     KPNNodes.AssertImpl(c2, _ >= 0)
   ))
 
-  val schedule : Encoder.Schedule =
-    Encoder.Schedule(0, List((0, Encoder.SendEvent(c1), 1),
-                             (1, Encoder.RecvEvent(c1), 2),
-                             (2, Encoder.SendEvent(c2), 3),
-                             (3, Encoder.RecvEvent(c2), 4),
-                             (3, Encoder.RecvEvent(c2), 0),
-                             (4, Encoder.ErrorEvent, 4)))
+  val schedule : Scheduler.Schedule =
+    Scheduler.Schedule(0, List((0, Scheduler.SendEvent(c1), 1),
+                             (1, Scheduler.RecvEvent(c1), 2),
+                             (2, Scheduler.SendEvent(c2), 3),
+                             (3, Scheduler.RecvEvent(c2), 4),
+                             (3, Scheduler.RecvEvent(c2), 0),
+                             (4, Scheduler.ErrorEvent, 4)))
 
   SolveUtil.solve("InputVerify", network, schedule = Some(schedule))
 }
@@ -358,14 +358,14 @@ object ExampleProgSum {
   val summaries : Map[Int, Encoder.Summary] =
     Map(0 -> SumSummary, 1 -> IncSummary)
 
-  val schedule : Encoder.Schedule =
-    Encoder.Schedule(0, List((0, Encoder.SendEvent(in1), 1),
-                             (1, Encoder.RecvEvent(in1), 2),
-                             (2, Encoder.SendEvent(in2), 3),
-                             (3, Encoder.RecvEvent(in2), 4),
-                             (4, Encoder.SendEvent(out), 5),
-                             (5, Encoder.RecvEvent(out), 0),
-                             (0, Encoder.ErrorEvent, 0)))
+  val schedule : Scheduler.Schedule =
+    Scheduler.Schedule(0, List((0, Scheduler.SendEvent(in1), 1),
+                               (1, Scheduler.RecvEvent(in1), 2),
+                               (2, Scheduler.SendEvent(in2), 3),
+                               (3, Scheduler.RecvEvent(in2), 4),
+                               (4, Scheduler.SendEvent(out), 5),
+                               (5, Scheduler.RecvEvent(out), 0),
+                               (0, Scheduler.ErrorEvent, 0)))
 
 }
 
@@ -384,8 +384,7 @@ object FibonacciVerify extends App {
   SolveUtil.solve("Fibonacci, verifying contracts, assuming system schedule",
                   ExampleProgFib.network,
                   ExampleProgFib.summaries,
-                  schedule = Some(ExampleProgFib.schedule),
-                  printSol = true)
+                  schedule = Some(ExampleProgFib.schedule))
 
 }
 
@@ -424,19 +423,49 @@ object ExampleProgFib {
         2 -> KPNNodes.DelayContract(1, ak, bk),
         3 -> KPNNodes.SplitContract(bk, ck, dk, ek))
 
-  val schedule : Encoder.Schedule =
-    Encoder.Schedule(0, List((0, Encoder.SendEvent(bk), 1),
-                             (1, Encoder.RecvEvent(bk), 2),
-                             (2, Encoder.SendEvent(ck), 3),
-                             (3, Encoder.RecvEvent(ck), 4),
-                             (4, Encoder.SendEvent(dk), 5),
-                             (5, Encoder.RecvEvent(dk), 6),
-                             (6, Encoder.ErrorEvent, 6),
-                             (6, Encoder.SendEvent(fk), 7),
-                             (7, Encoder.RecvEvent(fk), 8),
-                             (8, Encoder.SendEvent(ek), 9),
-                             (9, Encoder.RecvEvent(ek), 10),
-                             (10, Encoder.SendEvent(ak), 11),
-                             (11, Encoder.RecvEvent(ak), 0)))
+  val schedule : Scheduler.Schedule =
+    Scheduler.Schedule(0, List((0, Scheduler.SendEvent(bk), 1),
+                               (1, Scheduler.RecvEvent(bk), 2),
+                               (2, Scheduler.SendEvent(ck), 3),
+                               (3, Scheduler.RecvEvent(ck), 4),
+                               (4, Scheduler.SendEvent(dk), 5),
+                               (5, Scheduler.RecvEvent(dk), 6),
+                               (6, Scheduler.ErrorEvent, 6),
+                               (6, Scheduler.SendEvent(fk), 7),
+                               (7, Scheduler.RecvEvent(fk), 8),
+                               (8, Scheduler.SendEvent(ek), 9),
+                               (9, Scheduler.RecvEvent(ek), 10),
+                               (10, Scheduler.SendEvent(ak), 11),
+                               (11, Scheduler.RecvEvent(ak), 0)))
+
+}
+
+
+object NestedNetworkVerify extends App {
+
+  import KPN._
+  import IExpression._
+
+  val ak = new Channel("ak", Sort.Integer)
+  val ek = new Channel("ek", Sort.Integer)
+
+  val sum_in = new Channel("sum_in", Sort.Integer)
+  val bk = new Channel("bk", Sort.Integer)
+  val ck = new Channel("ck", Sort.Integer)
+  val dk = new Channel("dk", Sort.Integer)
+  val sum_out = new Channel("sum_out", Sort.Integer)
+
+  val network =
+    Net(KPNNodes.InputImpl(ak),
+        KPNNodes.AbsImpl(ak, sum_in),
+        Net(KPNNodes.DelayImpl(0, bk, ck),
+            KPNNodes.AddImpl  (sum_in, ck, dk),
+            KPNNodes.SplitImpl(dk, sum_out, bk)),
+        KPNNodes.AssertImpl(sum_out, _ >= 0))
+
+  println(network)
+
+  SolveUtil.solve("nested network, verification",
+                  network)
 
 }
