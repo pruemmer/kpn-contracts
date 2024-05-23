@@ -246,24 +246,31 @@ object KPN {
 
 object SolveUtil {
 
+  abstract sealed class Result
+  case object Safe    extends Result
+  case object Unsafe  extends Result
+  case object Timeout extends Result
+
   def solve(name         : String,
             network      : KPN.Network,
             contracts    : Map[Int, Encoder.Summary] = Map(),
             schedule     : Option[Scheduler.Schedule] = None,
             debug        : Boolean = false,
             printSol     : Boolean = false,
+            enableAssert : Boolean = false,
+            quiet        : Boolean = false,
             queueEncoder : Encoder.QueueEncoder =
               Encoder.Capacity1QueueEncoder,
             historyEncoder : Encoder.HistoryEncoder =
-              Encoder.Capacity1HistoryEncoder) : Unit = {
-    val assertions = false
+              Encoder.Capacity1HistoryEncoder) : Result = {
 
-    ap.util.Debug.enableAllAssertions(assertions)
-    GlobalParameters.get.assertions = assertions
+    ap.util.Debug.enableAllAssertions(enableAssert)
+    GlobalParameters.get.assertions = enableAssert
 
-    println("Analysing KPN " + name)
-
-    println
+    if (!quiet) {
+      println("Analysing KPN " + name)
+      println
+    }
 
     val locContracts =
       for ((n, s) <- contracts) yield (KPN.NodeLocator.top.down(n), s)
@@ -279,8 +286,10 @@ object SolveUtil {
       for (c <- encoder.allClauses)
         println(c.toPrologString)
 
-    println
-    println("Solving ...")
+    if (!quiet) {
+      println
+      println("Solving ...")
+    }
 
     if (printSol || debug) {
       GlobalParameters.get.log = debug
@@ -293,19 +302,24 @@ object SolveUtil {
             val solWithConsts = VariableSubstVisitor(f, (consts, 0))
             println(p.name + ":\t" + PrincessLineariser.asString(solWithConsts))
           }
+          Safe
         case Right(cex) => {
           cex.prettyPrint
           GlobalParameters.get.pngNo = false
           GlobalParameters.get.eogCEX = true
           Util.show(cex map (_._1), "kpn")
+          Unsafe
         }
       }
     } else {
       GlobalParameters.get.log = false
-      if (SimpleWrapper.isSat(encoder.allClauses))
+      if (SimpleWrapper.isSat(encoder.allClauses)) {
         println("SAFE")
-      else
+        Safe
+      } else {
         println("UNSAFE")
+        Unsafe
+      }
     }
   }
 

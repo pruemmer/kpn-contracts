@@ -12,3 +12,4 @@ resolvers += "uuverifiers" at "https://eldarica.org/maven/"
 
 //    libraryDependencies += "uuverifiers" %% "princess" % "2021-03-10"
 libraryDependencies += "uuverifiers" %% "eldarica" % "nightly-SNAPSHOT"
+libraryDependencies   += "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
