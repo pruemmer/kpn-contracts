@@ -116,40 +116,130 @@ object KPN {
   }
 
   /**
-   * Networks
+   * Network nodes.
    */
-
   abstract sealed class NetworkNode {
-    def constants : Seq[ConstantTerm]
-    def inChans   : Seq[Channel]
-    def outChans  : Seq[Channel]
+    def inChans       : Seq[Channel]
+    def internalChans : Seq[Channel]
+    def outChans      : Seq[Channel]
+    def allChans      : Seq[Channel] = inChans ++ internalChans ++ outChans
+
+    assert(Seqs.disjointSeq(inChans.toSet,  outChans) &&
+           Seqs.disjointSeq(inChans.toSet,  internalChans) &&
+           Seqs.disjointSeq(outChans.toSet, internalChans))
   }
 
-  case class ProgNode  (prog    : Prog)    extends NetworkNode {
-    def constants : Seq[ConstantTerm] = prog.constants
-    def inChans   : Seq[Channel]      = inChannels(prog).toSeq.sortBy(_.name)
-    def outChans  : Seq[Channel]      = outChannels(prog).toSeq.sortBy(_.name)
+  /**
+   * Atomic network nodes defined by programs.
+   */
+  case class ProgNode  (prog : Prog)    extends NetworkNode {
+    def constants     : Seq[ConstantTerm] = prog.constants
+    def inChans       : Seq[Channel]      = inChannels(prog).toSeq.sortBy(_.name)
+    def internalChans : Seq[Channel]      = List()
+    def outChans      : Seq[Channel]      = outChannels(prog).toSeq.sortBy(_.name)
   }
 
-//  case class SubnetNode(network : Network) extends NetworkNode
+  /**
+   * Compound network nodes defined by sub-networks.
+   */
+  case class SubnetNode(network : Network) extends NetworkNode {
+    def inChans       : Seq[Channel]      = network.inChans
+    def internalChans : Seq[Channel]      = network.internalChans
+    def outChans      : Seq[Channel]      = network.outChans
+  }
 
+  /**
+   * Networks, defined by a list of network nodes.
+   */
   case class Network(processes : IndexedSeq[NetworkNode]) {
-    // Channels have unique writers and readers
+    // Channels have unique writers and readers; internal
+    // nodes are not used anywhere else.
     assert((0 until processes.size) forall { i =>
              ((i+1) until processes.size) forall { j =>
-               Seqs.disjointSeq(processes(i).inChans.toSet, processes(j).inChans) &&
-               Seqs.disjointSeq(processes(i).outChans.toSet, processes(j).outChans)
+               Seqs.disjointSeq(processes(i).inChans.toSet,
+                                processes(j).inChans) &&
+               Seqs.disjointSeq(processes(i).outChans.toSet,
+                                processes(j).outChans)
              }},
            "Channel with multiple readers or multiple writers")
+    assert((0 until processes.size) forall { i =>
+             ((i+1) until processes.size) forall { j =>
+               Seqs.disjointSeq(processes(i).internalChans.toSet,
+                                processes(j).allChans) &&
+               Seqs.disjointSeq(processes(j).internalChans.toSet,
+                                processes(i).allChans)
+             }},
+           "Internal channel used in illegal context")
 
-    val allConsts : Seq[ConstantTerm] =
-      (for (n <- processes; c <- n.constants) yield c).distinct
     val allChans : Seq[Channel] =
-      (for (n <- processes; c <- n.inChans ++ n.outChans) yield c).distinct
+      (for (n <- processes; c <- n.allChans) yield c).distinct
+    private val allInChans : Seq[Channel] =
+      (for (n <- processes; c <- n.inChans) yield c).distinct
+    private val allOutChans : Seq[Channel] =
+      (for (n <- processes; c <- n.outChans) yield c).distinct
+    val inChans : Seq[Channel] =
+      allInChans filterNot allOutChans.toSet
+    val outChans : Seq[Channel] =
+      allOutChans filterNot allInChans.toSet
+    val internalChans : Seq[Channel] =
+      allChans filterNot allInChans.toSet filterNot allOutChans.toSet
+
+    def apply(loc : NodeLocator) : NetworkNode =
+      locate(loc.path.reverse)
+
+    def childLocators : IndexedSeq[NodeLocator] =
+      (for (n <- 0 until processes.size) yield NodeLocator.top.down(n)).toVector
+
+    private def locate(path : List[Int]) : NetworkNode =
+      path match {
+        case List() =>
+          SubnetNode(this)
+        case head :: List() =>
+          processes(head)
+        case head :: tail =>
+          processes(head).asInstanceOf[SubnetNode].network.locate(tail)
+      }
+        
+    def nodeLocIterator : Iterator[(NetworkNode, NodeLocator)] =
+      nodeLocIteratorHelp(NodeLocator.top)
+
+    def locIterator : Iterator[NodeLocator] =
+      nodeLocIterator.map(_._2)
+
+    private def nodeLocIteratorHelp(loc : NodeLocator)
+                                  : Iterator[(NetworkNode, NodeLocator)] =
+      for ((n, i) <- processes.iterator.zipWithIndex;
+           newLoc = loc.down(i);
+           sub = (n match {
+                    case ProgNode(_) => Iterator.empty
+                    case SubnetNode(network) => network.nodeLocIteratorHelp(newLoc)
+                  });
+           r <- Iterator((n, newLoc)) ++ sub)
+      yield r
+
   }
 
   def Network(processes : Seq[Prog]) : Network =
     Network(processes.map(ProgNode(_)).toIndexedSeq)
+
+  def Net(nodes : NetworkNode*) : Network =
+    Network(nodes.toIndexedSeq)
+
+  implicit def network2node(net : Network) : NetworkNode =
+    SubnetNode(net)
+
+  implicit def prog2node(prog : Prog) : NetworkNode =
+    ProgNode(prog)
+
+  object NodeLocator {
+    def top = NodeLocator(List())
+  }
+
+  case class NodeLocator(path : List[Int]) {
+    def down(n : Int) = NodeLocator(n :: path)
+    def apply(n : Int) = down(n)
+    def up = NodeLocator(path.tail)
+  }
 
 }
 
@@ -166,18 +256,23 @@ object SolveUtil {
               Encoder.Capacity1QueueEncoder,
             historyEncoder : Encoder.HistoryEncoder =
               Encoder.Capacity1HistoryEncoder) : Unit = {
-    ap.util.Debug.enableAllAssertions(false)
-    GlobalParameters.get.assertions = false
+    val assertions = false
+
+    ap.util.Debug.enableAllAssertions(assertions)
+    GlobalParameters.get.assertions = assertions
 
     println("Analysing KPN " + name)
 
     println
 
+    val locContracts =
+      for ((n, s) <- contracts) yield (KPN.NodeLocator.top.down(n), s)
+
     val encoder =
       new Encoder(network,
                   defaultQueueEncoder = queueEncoder,
                   defaultHistoryEncoder = historyEncoder,
-                  summaries = contracts,
+                  summaries = locContracts,
                   systemSchedule = schedule)
 
     if (debug)

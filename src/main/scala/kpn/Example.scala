@@ -384,8 +384,7 @@ object FibonacciVerify extends App {
   SolveUtil.solve("Fibonacci, verifying contracts, assuming system schedule",
                   ExampleProgFib.network,
                   ExampleProgFib.summaries,
-                  schedule = Some(ExampleProgFib.schedule),
-                  printSol = true)
+                  schedule = Some(ExampleProgFib.schedule))
 
 }
 
@@ -428,5 +427,35 @@ object ExampleProgFib {
                                (9, Scheduler.RecvEvent(ek), 10),
                                (10, Scheduler.SendEvent(ak), 11),
                                (11, Scheduler.RecvEvent(ak), 0)))
+
+}
+
+
+object NestedNetworkVerify extends App {
+
+  import KPN._
+  import IExpression._
+
+  val ak = new Channel("ak", Sort.Integer)
+  val ek = new Channel("ek", Sort.Integer)
+
+  val sum_in = new Channel("sum_in", Sort.Integer)
+  val bk = new Channel("bk", Sort.Integer)
+  val ck = new Channel("ck", Sort.Integer)
+  val dk = new Channel("dk", Sort.Integer)
+  val sum_out = new Channel("sum_out", Sort.Integer)
+
+  val network =
+    Net(KPNNodes.InputImpl(ak),
+        KPNNodes.AbsImpl(ak, sum_in),
+        Net(KPNNodes.DelayImpl(0, bk, ck),
+            KPNNodes.AddImpl  (sum_in, ck, dk),
+            KPNNodes.SplitImpl(dk, sum_out, bk)),
+        KPNNodes.AssertImpl(sum_out, _ >= 0))
+
+  println(network)
+
+  SolveUtil.solve("nested network, verification",
+                  network)
 
 }
