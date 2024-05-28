@@ -182,7 +182,9 @@ object KPN {
     val outChans : Seq[Channel] =
       allOutChans filterNot allInChans.toSet
     val internalChans : Seq[Channel] =
-      allChans filterNot allInChans.toSet filterNot allOutChans.toSet
+      allChans filterNot inChans.toSet filterNot outChans.toSet
+    val directInternalChans : Seq[Channel] =
+      allInChans filter allOutChans.toSet
 
     def apply(loc : NodeLocator) : NetworkNode =
       locate(loc.path.reverse)
@@ -239,6 +241,7 @@ object KPN {
     def down(n : Int) = NodeLocator(n :: path)
     def apply(n : Int) = down(n)
     def up = NodeLocator(path.tail)
+    def ++(that : NodeLocator) = NodeLocator(that.path ::: this.path)
   }
 
 }

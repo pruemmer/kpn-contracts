@@ -10,7 +10,6 @@ import ap.theories.ADT
 import lazabs.horn.bottomup.HornClauses
 
 import scala.collection.immutable.VectorBuilder
-import kpn.KPN.NodeLocator
 
 object Encoder {
   import IExpression._
@@ -376,7 +375,7 @@ class Encoder(network               : KPN.Network,
                 Encoder.ListQueueEncoder,
               defaultHistoryEncoder : Encoder.HistoryEncoder =
                 Encoder.ListHistoryEncoder,
-              summaries             : Map[NodeLocator, Encoder.Summary] =
+              summaries             : Map[KPN.NodeLocator, Encoder.Summary] =
                 Map(),
               systemSchedule        : Option[Scheduler.Schedule] =
                 None) {
@@ -502,16 +501,25 @@ class Encoder(network               : KPN.Network,
                   yield (0, ev, 0)) ++ List((0, ErrorEvent, 0)))
     }
 
-  val globalClauses = {
-    val childLocs           = network.childLocators
+  def subnetClauses(subnetLoc : NodeLocator) : Seq[Clause] = {
+    val subnet              = network(subnetLoc).asInstanceOf[SubnetNode].network
+
+    val childLocs           = subnet.childLocators.map(subnetLoc ++ _)
     val PN                  = childLocs.size
     val processes           = childLocs map (network(_))
     val childEventHistories = childLocs map processEventHistories
 
+    val (intChans, intChannelQueues, intChannelHistories) =
+      (for (((c, q), h) <- allChans zip channelQueues zip channelHistories;
+            if subnet.directInternalChans contains c)
+       yield (c, q, h)).unzip3
+
+    val CN = intChans.size
+
     val globalState =
       new MonoSortedPredicate("state",
-                              (channelQueues map (_.sort)) ++
-                                (channelHistories map (_.sort)) ++
+                              (intChannelQueues map (_.sort)) ++
+                                (intChannelHistories map (_.sort)) ++
                                 (childEventHistories map (_.sort)) ++
                                 List(Sort.Integer))
 
@@ -534,16 +542,16 @@ class Encoder(network               : KPN.Network,
 
     val procChanHistPre =
       for (pn <- 0 until PN)
-      yield (for ((c, t) <- allChans zip chanHistPre;
+      yield (for ((c, t) <- intChans zip chanHistPre;
                   if processes(pn).inChans contains c)
              yield t)
 
     val initClause = {
       val queueInits =
-        and(for ((t, c) <- chanQueuePost zip channelQueues)
+        and(for ((t, c) <- chanQueuePost zip intChannelQueues)
             yield (c isEmpty t))
       val chanHistInits =
-        and(for ((t, c) <- chanHistPost zip channelHistories)
+        and(for ((t, c) <- chanHistPost zip intChannelHistories)
             yield (c isEmpty t))
       val procHistInits =
         and(for ((t, p) <- eventHistPost zip childEventHistories)
@@ -552,11 +560,11 @@ class Encoder(network               : KPN.Network,
         schedStatePost === finalSystemSchedule.initial
       globalPostState :- (queueInits, chanHistInits, procHistInits, schedInit)
     }
-
+    
     val recvClauses =
       for ((p, pn) <- processes.zipWithIndex;
            c <- processes(pn).inChans;
-           cn = allChans indexOf c;
+           cn = intChans indexOf c;
            (schedFrom, RecvEvent(`c`), schedTo) <- finalSystemSchedule.transitions) yield {
         val postArgs =
           globalPreState.args.updated(stateChanQueueOffset + cn, chanQueuePost(cn))
@@ -569,9 +577,9 @@ class Encoder(network               : KPN.Network,
           recvEvent(cn)()
 
         val deq =
-          channelQueues(cn).dequeue(chanQueuePre(cn), value, chanQueuePost(cn))
+          intChannelQueues(cn).dequeue(chanQueuePre(cn), value, chanQueuePost(cn))
         val chanhistadd =
-          channelHistories(cn).add(chanHistPre(cn), value, chanHistPost(cn))
+          intChannelHistories(cn).add(chanHistPre(cn), value, chanHistPost(cn))
         val eventhistadd =
           childEventHistories(pn).add(eventHistPre(pn), event, eventHistPost(pn))
         val schedConstraints =
@@ -587,7 +595,7 @@ class Encoder(network               : KPN.Network,
     val sendClauses =
       for ((p, pn) <- processes.zipWithIndex;
            c <- processes(pn).outChans;
-           cn = allChans indexOf c;
+           cn = intChans indexOf c;
            (schedFrom, SendEvent(`c`), schedTo) <- finalSystemSchedule.transitions) yield {
         val postArgs =
           globalPreState.args.updated(stateChanQueueOffset + cn, chanQueuePost(cn))
@@ -599,7 +607,7 @@ class Encoder(network               : KPN.Network,
           sendEvent(cn)(value)
 
         val enc =
-          channelQueues(cn).enqueue(chanQueuePre(cn), value, chanQueuePost(cn))
+          intChannelQueues(cn).enqueue(chanQueuePre(cn), value, chanQueuePost(cn))
         val eventhistadd =
           childEventHistories(pn).add(eventHistPre(pn), event, eventHistPost(pn))
         val schedConstraints =
@@ -624,6 +632,8 @@ class Encoder(network               : KPN.Network,
 
     List(initClause) ++ recvClauses ++ sendClauses ++ errorClauses
   }
+
+  val globalClauses = subnetClauses(NodeLocator.top)
 
   //////////////////////////////////////////////////////////////////////////////
   // Clauses about the individual processes
