@@ -66,6 +66,11 @@ object KPNNodes {
     )
   }
 
+  def ConstImpl(out : Channel, values : ITerm*) =
+    Prog(
+      (for (t <- values) yield (t --> out)) : _*
+    )
+
   def AddImpl(in1 : Channel, in2 : Channel, out : Channel) = {
     require(in1.sort == Sort.Integer &&
             in2.sort == Sort.Integer &&

@@ -230,12 +230,32 @@ object KPN {
         case head :: tail =>
           processes(head).asInstanceOf[SubnetNode].network.locate(tail)
       }
-        
+
+    /**
+     * Iterator over all strict sub-nodes.
+     */
     def nodeLocIterator : Iterator[(NetworkNode, NodeLocator)] =
       nodeLocIteratorHelp(NodeLocator.top)
 
+    /**
+     * Iterator over locators to all sub-nodes, including the network
+     * itself.
+     */
+    def allNodeLocIterator : Iterator[(NetworkNode, NodeLocator)] =
+      Iterator((SubnetNode(this), NodeLocator.top)) ++ nodeLocIterator
+
+    /**
+     * Iterator over locators to all strict sub-nodes.
+     */
     def locIterator : Iterator[NodeLocator] =
       nodeLocIterator.map(_._2)
+
+    /**
+     * Iterator over locators to all sub-nodes, including the network
+     * itself.
+     */
+    def allLocIterator : Iterator[NodeLocator] =
+      allNodeLocIterator.map(_._2)
 
     private def nodeLocIteratorHelp(loc : NodeLocator)
                                   : Iterator[(NetworkNode, NodeLocator)] =
@@ -267,6 +287,7 @@ object KPN {
   }
 
   case class NodeLocator(path : List[Int]) {
+    def isTop = path.isEmpty
     def down(n : Int) = NodeLocator(n :: path)
     def apply(n : Int) = down(n)
     def up = NodeLocator(path.tail)
@@ -287,6 +308,7 @@ object SolveUtil {
             network      : KPN.Network,
             contracts    : Map[Int, Encoder.Summary] = Map(),
             schedule     : Option[Scheduler.Schedule] = None,
+            schedules    : Map[KPN.NodeLocator, Scheduler.Schedule] = Map(),
             debug        : Boolean = false,
             printSol     : Boolean = false,
             enableAssert : Boolean = false,
@@ -307,12 +329,18 @@ object SolveUtil {
     val locContracts =
       for ((n, s) <- contracts) yield (KPN.NodeLocator.top.down(n), s)
 
+    val allSchedules =
+      schedule match {
+        case Some(s) => schedules + (KPN.NodeLocator.top -> s)
+        case None    => schedules
+      }
+
     val encoder =
       new Encoder(network,
                   defaultQueueEncoder = queueEncoder,
                   defaultHistoryEncoder = historyEncoder,
                   summaries = locContracts,
-                  systemSchedule = schedule)
+                  schedules = allSchedules)
 
     if (debug)
       for (c <- encoder.allClauses)
