@@ -291,10 +291,10 @@ object SolveUtil {
             printSol     : Boolean = false,
             enableAssert : Boolean = false,
             quiet        : Boolean = false,
-            queueEncoder : Encoder.QueueEncoder =
-              Encoder.Capacity1QueueEncoder,
-            historyEncoder : Encoder.HistoryEncoder =
-              Encoder.Capacity1HistoryEncoder) : Result = {
+            queueEncoder : QueueEncoders.QueueEncoder =
+              QueueEncoders.Capacity1QueueEncoder,
+            historyEncoder : HistoryEncoders.HistoryEncoder =
+              HistoryEncoders.Capacity1HistoryEncoder) : Result = {
 
     ap.util.Debug.enableAllAssertions(enableAssert)
     GlobalParameters.get.assertions = enableAssert

@@ -33,7 +33,7 @@
 package kpn
 
 import ap.parser._
-import kpn.Encoder.Capacity2HistoryEncoder
+import kpn.HistoryEncoders.Capacity2HistoryEncoder
 
 object InputScheduling extends App {
 

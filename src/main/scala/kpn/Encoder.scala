@@ -44,179 +44,8 @@ import scala.collection.immutable.VectorBuilder
 object Encoder {
   import IExpression._
   import HornClauses._
-
-  abstract class QueueEncoder {
-    def apply(s : Sort) : QueueEncoderInstance
-  }
-
-  abstract class QueueEncoderInstance {
-    val sort : Sort
-    def isEmpty(t : ITerm) : IFormula
-    def enqueue(pre : ITerm, el : ITerm, post : ITerm) : IFormula
-    def dequeue(pre : ITerm, el : ITerm, post : ITerm) : IFormula
-    val axioms : Seq[Clause]
-  }
-
-  object ListQueueEncoder extends QueueEncoder {
-    def apply(elementSort : Sort) = new QueueEncoderInstance {
-      val (sort, nil, cons, head, tail, _) =
-        ADT.createListType(elementSort.name + "_list", elementSort)
-      val enqueuePred =
-        MonoSortedPredicate(elementSort.name + "_enqueue",
-                            List(sort, elementSort, sort))
-
-      def isEmpty(t : ITerm) : IFormula = t === nil()
-
-      def enqueue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        enqueuePred(pre, el, post)
-
-      def dequeue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        pre === cons(el, post)
-
-      val axioms = {
-        val pre    = sort newConstant "pre"
-        val post   = sort newConstant "post"
-        val value1 = elementSort newConstant "value1"
-        val value2 = elementSort newConstant "value2"
-        List(
-          enqueuePred(nil(), value1, cons(value1, nil())) :-
-            true,
-          enqueuePred(cons(value2, pre), value1, cons(value2, post)) :-
-            enqueuePred(pre, value1, post)
-        )
-      }
-    }
-  }
-
-  object Capacity1QueueEncoder extends QueueEncoder {
-    def apply(elementSort : Sort) = new QueueEncoderInstance {
-      val name = elementSort.name + "_queue1"
-      val (sort, record, Seq(queue_size, queue_value)) =
-        ADT.createRecordType(name,
-                             List((name + "_size", Sort.Integer),
-                                  (name + "_value", elementSort)))
-
-      def isEmpty(t : ITerm) : IFormula = queue_size(t) === 0
-
-      def enqueue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        (queue_size(post) === queue_size(pre) + 1) &
-        ite(queue_size(pre) === 0,
-            queue_value(post) === el,
-            queue_value(post) === queue_value(pre))
-
-      def dequeue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        (queue_size(pre) > 0) &
-        (queue_size(post) === queue_size(pre) - 1) &
-        (el === queue_value(pre))
-
-      val axioms = List()
-    }
-  }
-
-  object Capacity2QueueEncoder extends QueueEncoder {
-    def apply(elementSort : Sort) = new QueueEncoderInstance {
-      val name = elementSort.name + "_queue2"
-      val (sort, record, Seq(queue_size, queue_value1, queue_value2)) =
-        ADT.createRecordType(name,
-                             List((name + "_size", Sort.Integer),
-                                  (name + "_value1", elementSort),
-                                  (name + "_value2", elementSort)))
-
-      def isEmpty(t : ITerm) : IFormula = queue_size(t) === 0
-
-      def enqueue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        (queue_size(post) === queue_size(pre) + 1) &
-        ((queue_size(pre) === 0 & queue_value1(post) === el) |
-           (queue_size(pre) === 1 &
-              queue_value1(post) === queue_value1(pre) &
-              queue_value2(post) === el) |
-           (queue_size(pre) >= 2 &
-              queue_value1(post) === queue_value1(pre) &
-              queue_value2(post) === queue_value2(pre)))
-
-      def dequeue(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        (queue_size(pre) > 0) &
-        (queue_size(post) === queue_size(pre) - 1) &
-        (el === queue_value1(pre)) &
-        (queue_value1(post) === queue_value2(pre))
-
-      val axioms = List()
-    }
-  }
-
-  abstract class HistoryEncoder {
-    def apply(s : Sort) : HistoryEncoderInstance
-  }
-
-  abstract class HistoryEncoderInstance {
-    val sort : Sort
-    def isEmpty(t : ITerm) : IFormula
-    def add(pre : ITerm, el : ITerm, post : ITerm) : IFormula
-    def last(hist : ITerm) : ITerm
-  }
-
-  object ListHistoryEncoder extends HistoryEncoder {
-    def apply(s : Sort) = new HistoryEncoderInstance {
-      val (sort, nil, cons, head, tail, _) =
-        ADT.createListType(s.name + "_list", s)
-      def isEmpty(t : ITerm) : IFormula = t === nil()
-      def add(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        post === cons(el, pre)
-      def last(hist : ITerm) : ITerm =
-        head(hist)
-    }
-  }
-
-  object Capacity1HistoryEncoder extends HistoryEncoder {
-    def apply(elementSort : Sort) = new HistoryEncoderInstance {
-      val name = elementSort.name + "_hist1"
-      val (sort, record, Seq(hist_empty, hist_value)) =
-        ADT.createRecordType(name,
-                             List((name + "_empty", Sort.Bool),
-                                  (name + "_value", elementSort)))
-      def isEmpty(t : ITerm) : IFormula =
-        t === record(ADT.BoolADT.True, elementSort.witness.get)
-      def add(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        post === record(ADT.BoolADT.False, el)
-      def last(hist : ITerm) : ITerm =
-        hist_value(hist)
-    }
-  }
-
-  object Capacity2HistoryEncoder extends HistoryEncoder {
-    def apply(elementSort : Sort) = new HistoryEncoderInstance {
-      val name = elementSort.name + "_hist2"
-      val (sort, record, Seq(hist_empty, hist_value1, hist_value2)) =
-        ADT.createRecordType(name,
-                             List((name + "_empty", Sort.Bool),
-                                  (name + "_value1", elementSort),
-                                  (name + "_value2", elementSort)))
-      def isEmpty(t : ITerm) : IFormula =
-        t === record(ADT.BoolADT.True, elementSort.witness.get, elementSort.witness.get)
-      def add(pre : ITerm, el : ITerm, post : ITerm) : IFormula =
-        post === record(ADT.BoolADT.False, el, hist_value1(pre))
-      def last(hist : ITerm) : ITerm =
-        hist_value1(hist)
-    }
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * Generic interface to buffer and event histories
-   */
-  trait History {
-    val sort : Sort
-    def isEmpty : IFormula
-    def last : ITerm
-  }
-
-  class HistoryInstance(t : ITerm,
-                        encoder : HistoryEncoderInstance) extends History {
-    val sort : Sort = encoder.sort
-    def isEmpty : IFormula = encoder.isEmpty(t)
-    def last : ITerm = encoder.last(t)
-  }
+  import HistoryEncoders.{History, HistoryEncoderInstance}
+  import KPN._
 
   /**
    * Simple API to analyse terms representing events.
@@ -246,11 +75,6 @@ object Encoder {
 
   /////////////////////////////////////////////////////////////////////////////
   // Clauses about the individual processes
-
-  import KPN._
-  import Encoder._
-  import IExpression._
-  import HornClauses._
 
   def pred2Atom(p : MonoSortedPredicate, prefix : String) : IAtom = {
     val args =
@@ -395,16 +219,16 @@ object Encoder {
 ////////////////////////////////////////////////////////////////////////////////
 
 class Encoder(network               : KPN.Network,
-              queueEncoders         : Map[KPN.Channel, Encoder.QueueEncoder] =
+              queueEncoders         : Map[KPN.Channel, QueueEncoders.QueueEncoder] =
                 Map(),
-              chanHistoryEncoders   : Map[KPN.Channel, Encoder.HistoryEncoder] =
+              chanHistoryEncoders   : Map[KPN.Channel, HistoryEncoders.HistoryEncoder] =
                 Map(),
-              eventEncoders         : Map[KPN.NodeLocator, Encoder.HistoryEncoder] =
+              eventEncoders         : Map[KPN.NodeLocator, HistoryEncoders.HistoryEncoder] =
                 Map(),
-              defaultQueueEncoder   : Encoder.QueueEncoder =
-                Encoder.ListQueueEncoder,
-              defaultHistoryEncoder : Encoder.HistoryEncoder =
-                Encoder.ListHistoryEncoder,
+              defaultQueueEncoder   : QueueEncoders.QueueEncoder =
+                QueueEncoders.ListQueueEncoder,
+              defaultHistoryEncoder : HistoryEncoders.HistoryEncoder =
+                HistoryEncoders.ListHistoryEncoder,
               summaries             : Map[KPN.NodeLocator, Encoder.Summary] =
                 Map(),
               systemSchedule        : Option[Scheduler.Schedule] =
@@ -415,6 +239,7 @@ class Encoder(network               : KPN.Network,
   import IExpression._
   import HornClauses._
   import Scheduler.{Schedule, RecvEvent, SendEvent, ErrorEvent}
+  import HistoryEncoders.HistoryInstance
 
   import network.allChans
 
