@@ -292,6 +292,11 @@ object KPN {
     def apply(n : Int) = down(n)
     def up = NodeLocator(path.tail)
     def ++(that : NodeLocator) = NodeLocator(that.path ::: this.path)
+    override def toString() =
+      if (path.isEmpty)
+        "top"
+      else
+        path.reverse.mkString("-")
   }
 
 }

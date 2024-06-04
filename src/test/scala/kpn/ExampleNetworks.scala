@@ -431,3 +431,37 @@ object TestProgFib {
                                (11, Scheduler.RecvEvent(ak), 0)))
 
 }
+
+object TestSimpleNested {
+
+  import KPN._
+  import IExpression._
+
+  val ak = new Channel("ak", Sort.Integer)
+  val bk = new Channel("bk", Sort.Integer)
+  val ck = new Channel("ck", Sort.Integer)
+
+  def network(bound : Int) =
+    Net(KPNNodes.ConstImpl(ak, -5),
+        Net(KPNNodes.AbsImpl(ak, bk),
+            KPNNodes.AbsImpl(bk, ck)),
+        KPNNodes.AssertImpl(ck, _ >= bound))
+
+  import Scheduler.{Schedule, SendEvent, RecvEvent, ErrorEvent}
+
+  val schedules =
+    Map(KPN.NodeLocator.top -> Schedule(0, List(
+      (0, SendEvent(ak), 1),
+      (1, RecvEvent(ak), 2),
+      (2, SendEvent(ck), 3),
+      (3, RecvEvent(ck), 2),
+      (2, ErrorEvent, -1)
+    )),
+    KPN.NodeLocator.top.down(1) -> Schedule(0, List(
+      (0, RecvEvent(ak), 1),
+      (1, SendEvent(bk), 2),
+      (2, RecvEvent(bk), 3),
+      (3, SendEvent(ck), 0)
+    )))
+
+}

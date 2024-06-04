@@ -61,7 +61,7 @@ object KPNNodes {
     Prog(
         While (true) (
             c <-- in,
-            ite(c >= 0, c, 0) --> out
+            ite(c >= 0, c, -c) --> out
         )
     )
   }
