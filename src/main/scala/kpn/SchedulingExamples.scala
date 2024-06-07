@@ -71,9 +71,9 @@ object NetworkScheduling extends App {
   val out = new Channel("out", Sort.Integer)
 
   val network =
-    Network(List(KPNNodes.DelayImpl (0, ek, fk),
+    Network(List(KPNNodes.DelayImpl (0)(ek, fk),
                  KPNNodes.AddImpl   (ck, fk, ak),
-                 KPNNodes.DelayImpl (1, ak, bk),
+                 KPNNodes.DelayImpl (1)(ak, bk),
                  KPNNodes.SplitImpl (bk, ck, dk, ek, out),
                  KPNNodes.AssertWin2Impl(dk, (x0, x1) => x0 <= x1)
                  //KPNNodes.AssertImpl(dk, _ >= 0)

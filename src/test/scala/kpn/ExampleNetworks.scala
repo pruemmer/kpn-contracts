@@ -403,9 +403,9 @@ object TestProgFib {
   val fk = new Channel("fk", Sort.Integer)
 
   def network(n : Int) =
-    Network(List(KPNNodes.DelayImpl (0, ek, fk),
+    Network(List(KPNNodes.DelayImpl (0)(ek, fk),
                  KPNNodes.AddImpl   (ck, fk, ak),
-                 KPNNodes.DelayImpl (1, ak, bk),
+                 KPNNodes.DelayImpl (1)(ak, bk),
                  KPNNodes.SplitImpl (bk, ck, dk, ek),
                  KPNNodes.AssertImpl(dk, _ >= n)))
 
@@ -442,7 +442,7 @@ object TestSimpleNested {
   val ck = new Channel("ck", Sort.Integer)
 
   def network(bound : Int) =
-    Net(KPNNodes.ConstImpl(ak, -5),
+    Net(KPNNodes.FiniteSeqImpl(-5)(ak),
         Net(KPNNodes.AbsImpl(ak, bk),
             KPNNodes.AbsImpl(bk, ck)),
         KPNNodes.AssertImpl(ck, _ >= bound))

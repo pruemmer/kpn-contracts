@@ -41,8 +41,8 @@ object KPNNodes {
   import IExpression._
 
   /**
-    * Node representing inputs to the network of type <code>sort</code>.
-    */
+   * Node representing inputs to the network of type <code>sort</code>.
+   */
   def InputImpl(out : Channel) = {
     val c = out.sort newConstant "c"
 
@@ -50,6 +50,17 @@ object KPNNodes {
         While (true) (
             Havoc(c),
             c --> out
+        )
+    )
+  }
+
+  /**
+   * Node continuously writing a constant value to the output.
+   */
+  def ConstImpl(value : ITerm)(out : Channel) = {
+    Prog(
+        While (true) (
+            value --> out
         )
     )
   }
@@ -66,7 +77,7 @@ object KPNNodes {
     )
   }
 
-  def ConstImpl(out : Channel, values : ITerm*) =
+  def FiniteSeqImpl(values : ITerm*)(out : Channel) =
     Prog(
       (for (t <- values) yield (t --> out)) : _*
     )
@@ -103,7 +114,7 @@ object KPNNodes {
     }
   }
 
-  def DelayImpl(init : ITerm, in : Channel, out : Channel) = {
+  def DelayImpl(init : ITerm)(in : Channel, out : Channel) = {
     require(in.sort == out.sort)
     val c = in.sort newConstant "c"
 

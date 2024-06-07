@@ -66,9 +66,9 @@ object ExampleProgFib {
   val fk = new Channel("fk", Sort.Integer)
 
   val network =
-    Network(List(KPNNodes.DelayImpl (0, ek, fk),
+    Network(List(KPNNodes.DelayImpl (0)(ek, fk),
                  KPNNodes.AddImpl   (ck, fk, ak),
-                 KPNNodes.DelayImpl (1, ak, bk),
+                 KPNNodes.DelayImpl (1)(ak, bk),
                  KPNNodes.SplitImpl (bk, ck, dk, ek),
                  KPNNodes.AssertImpl(dk, _ >= 0)))
 
@@ -113,12 +113,72 @@ object NestedNetworkVerify extends App {
   val network =
     Net(KPNNodes.InputImpl(ak),
         KPNNodes.AbsImpl(ak, sum_in),
-        Net(KPNNodes.DelayImpl(0, bk, ck),
+        Net(KPNNodes.DelayImpl(0)(bk, ck),
             KPNNodes.AddImpl  (sum_in, ck, dk),
             KPNNodes.SplitImpl(dk, sum_out, bk)),
         KPNNodes.AssertImpl(sum_out, _ >= 0))
 
   println(network)
+
+  SolveUtil.solve("nested network, verification",
+                  network)
+
+}
+
+object SimpleNestedNetworkVerify extends App {
+
+  import KPN._
+  import IExpression._
+
+  val ak = new Channel("ak", Sort.Integer)
+  val bk = new Channel("bk", Sort.Integer)
+  val ck = new Channel("ck", Sort.Integer)
+
+  val network =
+    Net(KPNNodes.FiniteSeqImpl(-5)(ak),
+        Net(KPNNodes.AbsImpl(ak, bk),
+            KPNNodes.AbsImpl(bk, ck)),
+        KPNNodes.AssertImpl(ck, _ >= 5))
+
+  import Scheduler.{Schedule, SendEvent, RecvEvent, ErrorEvent}
+
+  val schedules =
+    Map(KPN.NodeLocator.top -> Schedule(0, List(
+      (0, SendEvent(ak), 1),
+      (1, RecvEvent(ak), 2),
+      (2, SendEvent(ck), 3),
+      (3, RecvEvent(ck), 2),
+      (2, ErrorEvent, -1)
+    )),
+    KPN.NodeLocator.top.down(1) -> Schedule(0, List(
+      (0, RecvEvent(ak), 1),
+      (1, SendEvent(bk), 2),
+      (2, RecvEvent(bk), 3),
+      (3, SendEvent(ck), 0)
+    )))
+
+  SolveUtil.solve("nested network, verification",
+                  network, schedules = schedules, printSol = true)
+
+}
+
+
+object SimpleNestedNetworkVerify2 extends App {
+
+  import KPN._
+  import IExpression._
+
+  val ak = new Channel("ak", Sort.Integer)
+  val bk = new Channel("bk", Sort.Integer)
+  val ck = new Channel("ck", Sort.Integer)
+  val dk = new Channel("dk", Sort.Integer)
+
+  val network =
+    Net(KPNNodes.FiniteSeqImpl(-5)(ak),
+        KPNNodes.AbsImpl(ak, bk),
+        KPNNodes.AssertImpl(bk, _ >= 1))
+
+  import Scheduler.{Schedule, SendEvent, RecvEvent, ErrorEvent}
 
   SolveUtil.solve("nested network, verification",
                   network)
